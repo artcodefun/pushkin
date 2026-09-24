@@ -1,0 +1,17 @@
+---
+benchmark_root: /opt/pushkin-benchmark
+benchmark_source_archive: /tmp/pushkin-benchmark-source.tar.gz
+benchmark_state_dir: "{{ playbook_dir }}/../.state"
+pushkin_image: pushkin:benchmark
+pushkin_api_address: http://127.0.0.1:8080
+pushkin_http_port: 8080
+
+# The provider is deliberately fast enough to expose Pushkin/Kafka/PostgreSQL
+# behaviour rather than a synthetic provider bottleneck.
+fake_fcm_response_delay: 100ms
+fake_fcm_failure_percent: 0
+provider_rate_limit_qps: 100000
+provider_rate_limit_burst: 100000
+
+dataset_channel_count: 10
+dataset_users_per_channel: 100000

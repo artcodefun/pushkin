@@ -1,0 +1,11 @@
+# Terraform writes resource addresses and identifiers here.
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+**/terraform.tfvars
+
+# Generated locally by Ansible. They contain SSH endpoints, benchmark API keys,
+# and random test-only secrets.
+**/.state/
+**/inventory.ini
+**/results/

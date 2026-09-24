@@ -1,0 +1,6 @@
+---
+benchmark_root: /opt/pushkin-benchmark
+benchmark_source_archive: /tmp/pushkin-benchmark-source.tar.gz
+benchmark_state_dir: "{{ playbook_dir }}/../.state"
+pushkin_image: pushkin:benchmark
+dataset_user_count: 100000

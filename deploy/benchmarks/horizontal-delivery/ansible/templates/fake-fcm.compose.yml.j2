@@ -1,0 +1,11 @@
+name: pushkin-benchmark-fake-fcm
+
+services:
+  fake-fcm:
+    image: {{ pushkin_image }}
+    command: [/app/fake-fcm]
+    environment:
+      FAKE_FCM_HTTP_ADDRESS: :8081
+      FAKE_FCM_RESPONSE_DELAY: {{ fake_fcm_response_delay }}
+      FAKE_FCM_FAILURE_PERCENTAGE: "{{ fake_fcm_failure_percent }}"
+    ports: ["{{ private_ip }}:8081:8081"]

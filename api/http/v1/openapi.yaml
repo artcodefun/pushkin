@@ -1,0 +1,514 @@
+openapi: 3.0.3
+info:
+  title: Pushkin API
+  version: 1.0.0
+  description: Multi-tenant notification delivery service.
+servers:
+  - url: /api/v1
+tags:
+  - { name: Campaigns, description: Campaign creation, recipient batches, and scheduling. }
+  - { name: Providers, description: Tenant delivery-provider configuration. }
+  - { name: Mobile Applications, description: Tenant mobile-application configuration. }
+  - { name: Channels, description: Tenant delivery-channel configuration. }
+  - { name: Push Installations, description: Device-specific push-target registration. }
+  - { name: Tenants, description: Internal tenant provisioning. }
+  - { name: Tenant API Keys, description: Internal tenant API-key lifecycle. }
+security:
+  - TenantAPIKey: []
+paths:
+  /campaigns:
+    post:
+      tags: [Campaigns]
+      summary: Create a campaign
+      operationId: createCampaign
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCampaignRequest' } } } }
+      responses:
+        '201': { description: Campaign created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCampaignResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /campaigns:inline:
+    post:
+      tags: [Campaigns]
+      summary: Create and schedule an inline campaign
+      operationId: createInlineCampaign
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateInlineCampaignRequest' } } } }
+      responses:
+        '201': { description: Inline campaign created and ready to run, content: { application/json: { schema: { $ref: '#/components/schemas/CreateInlineCampaignResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /campaigns/{campaign_id}:
+    get:
+      tags: [Campaigns]
+      summary: Get a campaign
+      operationId: getCampaign
+      parameters: [{ $ref: '#/components/parameters/CampaignID' }]
+      responses:
+        '200': { description: Campaign state, content: { application/json: { schema: { $ref: '#/components/schemas/CampaignResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /campaigns/{campaign_id}/recipients:batch:
+    post:
+      tags: [Campaigns]
+      summary: Add campaign recipients
+      operationId: addCampaignRecipients
+      parameters: [{ $ref: '#/components/parameters/CampaignID' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddCampaignRecipientsRequest' } } } }
+      responses:
+        '201': { description: Recipient batch accepted, content: { application/json: { schema: { $ref: '#/components/schemas/AddCampaignRecipientsResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /campaigns/{campaign_id}/start:
+    post:
+      tags: [Campaigns]
+      summary: Start or schedule a campaign
+      operationId: startCampaign
+      parameters: [{ $ref: '#/components/parameters/CampaignID' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/StartCampaignRequest' } } } }
+      responses:
+        '200': { description: Campaign start requested, content: { application/json: { schema: { $ref: '#/components/schemas/StartCampaignResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /providers:
+    get:
+      tags: [Providers]
+      summary: List providers
+      operationId: listProviders
+      responses:
+        '200': { description: Tenant providers, content: { application/json: { schema: { $ref: '#/components/schemas/ListProvidersResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Providers]
+      summary: Create a provider
+      operationId: createProvider
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateProviderRequest' } } } }
+      responses:
+        '201': { description: Provider created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateProviderResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /providers/{provider_id}:
+    get:
+      tags: [Providers]
+      summary: Get a provider
+      operationId: getProvider
+      parameters: [{ $ref: '#/components/parameters/ProviderID' }]
+      responses:
+        '200': { description: Provider configuration without credentials, content: { application/json: { schema: { $ref: '#/components/schemas/ProviderResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /mobile-applications:
+    get:
+      tags: [Mobile Applications]
+      summary: List mobile applications
+      operationId: listMobileApplications
+      responses:
+        '200': { description: Tenant mobile applications, content: { application/json: { schema: { $ref: '#/components/schemas/ListMobileApplicationsResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Mobile Applications]
+      summary: Create a mobile application
+      operationId: createMobileApplication
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMobileApplicationRequest' } } } }
+      responses:
+        '201': { description: Mobile application created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateMobileApplicationResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /mobile-applications/{mobile_application_id}:
+    get:
+      tags: [Mobile Applications]
+      summary: Get a mobile application
+      operationId: getMobileApplication
+      parameters: [{ $ref: '#/components/parameters/MobileApplicationID' }]
+      responses:
+        '200': { description: Mobile application configuration, content: { application/json: { schema: { $ref: '#/components/schemas/MobileApplicationResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /mobile-applications/{mobile_application_id}/provider:
+    put:
+      tags: [Mobile Applications]
+      summary: Connect a mobile application to a provider
+      operationId: connectMobileApplicationProvider
+      parameters: [{ $ref: '#/components/parameters/MobileApplicationID' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ConnectMobileApplicationProviderRequest' } } } }
+      responses:
+        '204': { description: Provider connected }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Mobile Applications]
+      summary: Disconnect a mobile application from its provider
+      operationId: disconnectMobileApplicationProvider
+      parameters: [{ $ref: '#/components/parameters/MobileApplicationID' }]
+      responses:
+        '204': { description: Provider disconnected }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /channels:
+    get:
+      tags: [Channels]
+      summary: List channels
+      operationId: listChannels
+      responses:
+        '200': { description: Tenant channels, content: { application/json: { schema: { $ref: '#/components/schemas/ListChannelsResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Channels]
+      summary: Create a channel
+      operationId: createChannel
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateChannelRequest' } } } }
+      responses:
+        '201': { description: Channel created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateChannelResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /channels/{channel_id}:
+    get:
+      tags: [Channels]
+      summary: Get a channel
+      operationId: getChannel
+      parameters: [{ $ref: '#/components/parameters/ChannelID' }]
+      responses:
+        '200': { description: Channel configuration, content: { application/json: { schema: { $ref: '#/components/schemas/ChannelResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /channels/{channel_id}/mobile-applications/{mobile_application_id}:
+    put:
+      tags: [Channels]
+      summary: Link a mobile application to a channel
+      operationId: linkMobileApplicationToChannel
+      parameters: [{ $ref: '#/components/parameters/ChannelID' }, { $ref: '#/components/parameters/MobileApplicationID' }]
+      responses:
+        '204': { description: Mobile application linked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      tags: [Channels]
+      summary: Unlink a mobile application from a channel
+      operationId: unlinkMobileApplicationFromChannel
+      parameters: [{ $ref: '#/components/parameters/ChannelID' }, { $ref: '#/components/parameters/MobileApplicationID' }]
+      responses:
+        '204': { description: Mobile application unlinked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /push-installations:register:
+    post:
+      tags: [Push Installations]
+      summary: Register or update a push installation
+      operationId: registerPushInstallation
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RegisterPushInstallationRequest' } } } }
+      responses:
+        '204': { description: Push installation registered }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /internal/tenants:
+    get:
+      tags: [Tenants]
+      summary: List tenants
+      operationId: listTenants
+      security: [{ AdminKey: [] }]
+      responses:
+        '200': { description: Tenants, content: { application/json: { schema: { $ref: '#/components/schemas/ListTenantsResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      tags: [Tenants]
+      summary: Create a tenant
+      operationId: createTenant
+      security: [{ AdminKey: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTenantRequest' } } } }
+      responses:
+        '201': { description: Tenant created, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTenantResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /internal/tenant-api-keys:
+    post:
+      tags: [Tenant API Keys]
+      summary: Issue a tenant API key
+      operationId: issueTenantAPIKey
+      security: [{ AdminKey: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IssueTenantAPIKeyRequest' } } } }
+      responses:
+        '201': { description: API key issued; its secret is returned only by this operation., content: { application/json: { schema: { $ref: '#/components/schemas/IssueTenantAPIKeyResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /internal/tenant-api-keys/{api_key_id}:
+    delete:
+      tags: [Tenant API Keys]
+      summary: Revoke a tenant API key
+      operationId: revokeTenantAPIKey
+      security: [{ AdminKey: [] }]
+      parameters: [{ $ref: '#/components/parameters/APIKeyID' }]
+      responses:
+        '204': { description: API key revoked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/InternalError' }
+components:
+  securitySchemes:
+    TenantAPIKey: { type: apiKey, in: header, name: X-Pushkin-API-Key }
+    AdminKey: { type: apiKey, in: header, name: X-Pushkin-Admin-Key }
+  parameters:
+    CampaignID: { name: campaign_id, in: path, required: true, schema: { type: string, format: uuid } }
+    ProviderID: { name: provider_id, in: path, required: true, schema: { type: string, format: uuid } }
+    MobileApplicationID: { name: mobile_application_id, in: path, required: true, schema: { type: string, format: uuid } }
+    ChannelID: { name: channel_id, in: path, required: true, schema: { type: string, format: uuid } }
+    APIKeyID: { name: api_key_id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    BadRequest: { description: Request is malformed or violates validation rules. }
+    Unauthorized: { description: Authentication failed or the caller is not authorized. }
+    NotFound: { description: The requested resource does not exist. }
+    Conflict: { description: The requested operation conflicts with current state. }
+    Unavailable: { description: A required dependency is temporarily unavailable. }
+    InternalError: { description: An unexpected server error occurred. }
+  schemas:
+    Notification:
+      type: object
+      required: [title, body]
+      properties: { title: { type: string }, body: { type: string }, image: { type: string } }
+    CreateCampaignRequest:
+      type: object
+      required: [channel_key, priority, notification]
+      properties:
+        channel_key: { type: string }
+        priority: { type: string, enum: [critical, high, normal] }
+        notification: { $ref: '#/components/schemas/Notification' }
+        data: { type: object, additionalProperties: { type: string } }
+    CreateCampaignResponse:
+      type: object
+      required: [campaign_id]
+      properties: { campaign_id: { type: string, format: uuid } }
+    CreateInlineCampaignRequest:
+      type: object
+      required: [channel_key, priority, notification, user_ids]
+      properties:
+        channel_key: { type: string }
+        priority: { type: string, enum: [critical, high, normal] }
+        notification: { $ref: '#/components/schemas/Notification' }
+        data: { type: object, additionalProperties: { type: string } }
+        user_ids: { type: array, minItems: 1, maxItems: 100, items: { type: string } }
+        scheduled_at: { type: string, format: date-time, nullable: true }
+    CreateInlineCampaignResponse:
+      type: object
+      required: [campaign_id, status]
+      properties:
+        campaign_id: { type: string, format: uuid }
+        status: { type: string, enum: [scheduled, starting] }
+    AddCampaignRecipientsRequest:
+      type: object
+      required: [user_ids]
+      properties: { user_ids: { type: array, minItems: 1, items: { type: string } } }
+    AddCampaignRecipientsResponse:
+      type: object
+      required: [source_batch_id]
+      properties: { source_batch_id: { type: string, format: uuid } }
+    StartCampaignRequest:
+      type: object
+      properties: { scheduled_at: { type: string, format: date-time, nullable: true } }
+    StartCampaignResponse:
+      type: object
+      required: [campaign_id, status]
+      properties: { campaign_id: { type: string, format: uuid }, status: { type: string } }
+    CampaignResponse:
+      type: object
+      required: [campaign_id, channel_id, priority, status, notification, delivery_total, delivery_processed, delivery_accepted_count, delivery_failed_count]
+      properties:
+        campaign_id: { type: string, format: uuid }
+        channel_id: { type: string, format: uuid }
+        priority: { type: string, enum: [critical, high, normal] }
+        status: { type: string }
+        notification: { $ref: '#/components/schemas/Notification' }
+        data: { type: object, additionalProperties: { type: string } }
+        scheduled_at: { type: string, format: date-time, nullable: true }
+        started_at: { type: string, format: date-time, nullable: true }
+        delivery_total: { type: integer, format: uint64, minimum: 0 }
+        delivery_processed: { type: integer, format: uint64, minimum: 0 }
+        delivery_accepted_count: { type: integer, format: uint64, minimum: 0 }
+        delivery_failed_count: { type: integer, format: uint64, minimum: 0 }
+    CreateProviderRequest:
+      type: object
+      required: [type, credentials, rate_limit_qps, rate_limit_burst]
+      properties:
+        type: { type: string, enum: [fcm] }
+        credentials: { type: string, description: Credential material; encrypted before persistence and never returned. }
+        rate_limit_qps: { type: integer, minimum: 1 }
+        rate_limit_burst: { type: integer, minimum: 1 }
+    CreateProviderResponse:
+      type: object
+      required: [provider_id]
+      properties: { provider_id: { type: string, format: uuid } }
+    ProviderResponse:
+      type: object
+      required: [provider_id, type, status, rate_limit_qps, rate_limit_burst]
+      properties:
+        provider_id: { type: string, format: uuid }
+        type: { type: string, enum: [fcm] }
+        status: { type: string, enum: [active, disabled] }
+        rate_limit_qps: { type: integer, minimum: 1 }
+        rate_limit_burst: { type: integer, minimum: 1 }
+    ListProvidersResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items: { $ref: '#/components/schemas/ProviderResponse' }
+    CreateMobileApplicationRequest:
+      type: object
+      required: [provider_id, platform, package_name]
+      properties:
+        provider_id: { type: string, format: uuid }
+        platform: { type: string, enum: [android, ios] }
+        package_name: { type: string }
+    CreateMobileApplicationResponse:
+      type: object
+      required: [mobile_application_id]
+      properties: { mobile_application_id: { type: string, format: uuid } }
+    ConnectMobileApplicationProviderRequest:
+      type: object
+      required: [provider_id]
+      properties: { provider_id: { type: string, format: uuid } }
+    MobileApplicationResponse:
+      type: object
+      required: [mobile_application_id, platform, package_name, status]
+      properties:
+        mobile_application_id: { type: string, format: uuid }
+        provider_id: { type: string, format: uuid, nullable: true }
+        platform: { type: string, enum: [android, ios] }
+        package_name: { type: string }
+        status: { type: string, enum: [active, disabled] }
+    ListMobileApplicationsResponse:
+      type: object
+      required: [mobile_applications]
+      properties:
+        mobile_applications:
+          type: array
+          items: { $ref: '#/components/schemas/MobileApplicationResponse' }
+    CreateChannelRequest:
+      type: object
+      required: [provider_id, type, key]
+      properties:
+        provider_id: { type: string, format: uuid }
+        type: { type: string, enum: [mobile_push] }
+        key: { type: string }
+    CreateChannelResponse:
+      type: object
+      required: [channel_id]
+      properties: { channel_id: { type: string, format: uuid } }
+    ChannelResponse:
+      type: object
+      required: [channel_id, provider_id, type, key, status]
+      properties:
+        channel_id: { type: string, format: uuid }
+        provider_id: { type: string, format: uuid }
+        type: { type: string, enum: [mobile_push] }
+        key: { type: string }
+        status: { type: string, enum: [provisioning, active, disabled] }
+    ListChannelsResponse:
+      type: object
+      required: [channels]
+      properties:
+        channels:
+          type: array
+          items: { $ref: '#/components/schemas/ChannelResponse' }
+    RegisterPushInstallationRequest:
+      type: object
+      required: [user_id, platform, package_name, installation_id, token]
+      properties:
+        user_id: { type: string }
+        platform: { type: string, enum: [android, ios] }
+        package_name: { type: string }
+        installation_id: { type: string }
+        token: { type: string, writeOnly: true }
+    CreateTenantRequest:
+      type: object
+      required: [name, rate_limit_per_minute]
+      properties: { name: { type: string }, rate_limit_per_minute: { type: integer, minimum: 1 } }
+    CreateTenantResponse:
+      type: object
+      required: [tenant_id]
+      properties: { tenant_id: { type: string, format: uuid } }
+    TenantResponse:
+      type: object
+      required: [tenant_id, name, rate_limit_per_minute, status]
+      properties:
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        rate_limit_per_minute: { type: integer }
+        status: { type: string, enum: [active, disabled] }
+    ListTenantsResponse:
+      type: object
+      required: [tenants]
+      properties:
+        tenants:
+          type: array
+          items: { $ref: '#/components/schemas/TenantResponse' }
+    IssueTenantAPIKeyRequest:
+      type: object
+      required: [tenant_id, name]
+      properties: { tenant_id: { type: string, format: uuid }, name: { type: string } }
+    IssueTenantAPIKeyResponse:
+      type: object
+      required: [api_key_id, api_key]
+      properties:
+        api_key_id: { type: string, format: uuid }
+        api_key: { type: string, writeOnly: true, description: Save the key now; it cannot be retrieved again. }

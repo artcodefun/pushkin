@@ -1,0 +1,11 @@
+name: pushkin-single-node-fake-fcm
+
+services:
+  fake-fcm:
+    image: {{ pushkin_image }}
+    command: [/app/fake-fcm]
+    environment:
+      FAKE_FCM_HTTP_ADDRESS: :8081
+      FAKE_FCM_RESPONSE_DELAY: 100ms
+      FAKE_FCM_FAILURE_PERCENTAGE: "0"
+    ports: ["{{ private_ip }}:8081:8081"]

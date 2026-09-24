@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pushkin
+      POSTGRES_PASSWORD: pushkin
+      POSTGRES_DB: pushkin
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - redis_data:/data
+
+  volume-init:
+    image: apache/kafka:4.3.1
+    user: "0:0"
+    command: ["bash", "-ec", "chown -R appuser:appuser /tmp/kraft-combined-logs"]
+    restart: "no"
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT://:19092,PLAINTEXT_HOST://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+    volumes:
+      - kafka_data:/tmp/kraft-combined-logs
+
+  migrate:
+    image: pushkin:local
+    build:
+      context: .
+    command: ["/app/migrate.sh"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
+      PUSHKIN_MIGRATIONS_TABLE: pushkin_schema_migrations
+
+  fake-fcm:
+    image: pushkin:local
+    build:
+      context: .
+    command: ["/app/fake-fcm"]
+    environment:
+      FAKE_FCM_HTTP_ADDRESS: :8081
+      FAKE_FCM_RESPONSE_DELAY: 100ms
+    ports:
+      - "127.0.0.1:8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:8081/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    image: pushkin:local
+    build:
+      context: .
+    env_file:
+      - .env
+    environment:
+      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
+      PUSHKIN_KAFKA_BROKERS: kafka:19092
+      PUSHKIN_REDIS_ADDRESS: redis:6379
+      PUSHKIN_INSTANCE_ID: pushkin-compose
+      PUSHKIN_USE_TEST_SENDER: "true"
+      PUSHKIN_TEST_SENDER_URL: http://fake-fcm:8081
+    depends_on:
+      fake-fcm:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  kafka_data:
+  postgres_data:
+  redis_data:

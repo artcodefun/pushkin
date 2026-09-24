@@ -1,0 +1,57 @@
+name: pushkin-benchmark-infrastructure
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pushkin
+      POSTGRES_PASSWORD: pushkin
+      POSTGRES_DB: pushkin
+    ports: ["{{ private_ip }}:5432:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ["{{ private_ip }}:6379:6379"]
+    volumes: [redis_data:/data]
+
+  volume-init:
+    image: apache/kafka:4.3.1
+    user: "0:0"
+    command: ["bash", "-ec", "chown -R appuser:appuser /tmp/kraft-combined-logs"]
+    volumes: [kafka_data:/tmp/kraft-combined-logs]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    depends_on:
+      volume-init: { condition: service_completed_successfully }
+    ports: ["{{ private_ip }}:9092:9092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:29093,INTERNAL://:19092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:19092,EXTERNAL://{{ private_ip }}:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    volumes: [kafka_data:/tmp/kraft-combined-logs]
+
+  migrate:
+    image: {{ pushkin_image }}
+    command: [/app/migrate.sh]
+    environment:
+      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
+      PUSHKIN_MIGRATIONS_TABLE: pushkin_schema_migrations
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:

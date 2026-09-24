@@ -1,0 +1,138 @@
+---
+- name: Create a ten-channel benchmark dataset
+  hosts: pushkin[0]
+  gather_facts: false
+  vars:
+    state_file: "{{ benchmark_state_dir }}/dataset.yml"
+    api_address: http://127.0.0.1:8080
+  tasks:
+    - name: Fail when the dataset was already prepared
+      ansible.builtin.stat:
+        path: "{{ state_file }}"
+      delegate_to: localhost
+      register: dataset_state
+
+    - name: Require a fresh database
+      ansible.builtin.fail:
+        msg: "Dataset state exists at {{ state_file }}. Recreate the benchmark environment before preparing it again."
+      when: dataset_state.stat.exists
+      delegate_to: localhost
+
+    - name: Create benchmark tenant
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/internal/tenants"
+        method: POST
+        headers: { X-Pushkin-Admin-Key: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/admin_key chars=ascii_letters,digits length=32') }}" }
+        body_format: json
+        body: { name: horizontal-benchmark, rate_limit_per_minute: 10000000 }
+        status_code: 201
+      register: tenant
+
+    - name: Issue benchmark tenant API key
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/internal/tenant-api-keys"
+        method: POST
+        headers: { X-Pushkin-Admin-Key: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/admin_key chars=ascii_letters,digits length=32') }}" }
+        body_format: json
+        body: { tenant_id: "{{ tenant.json.tenant_id }}", name: horizontal-benchmark }
+        status_code: 201
+      register: tenant_api_key
+
+    - name: Create provider for every channel
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/providers"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ tenant_api_key.json.api_key }}" }
+        body_format: json
+        body:
+          type: fcm
+          credentials: benchmark-credential-{{ item }}
+          rate_limit_qps: "{{ provider_rate_limit_qps }}"
+          rate_limit_burst: "{{ provider_rate_limit_burst }}"
+        status_code: 201
+      loop: "{{ range(1, dataset_channel_count + 1) | list }}"
+      register: providers
+
+    - name: Create mobile application for every channel
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/mobile-applications"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ tenant_api_key.json.api_key }}" }
+        body_format: json
+        body:
+          provider_id: "{{ providers.results[item - 1].json.provider_id }}"
+          platform: android
+          package_name: com.pushkin.benchmark.{{ item }}
+        status_code: 201
+      loop: "{{ range(1, dataset_channel_count + 1) | list }}"
+      register: applications
+
+    - name: Create channels
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/channels"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ tenant_api_key.json.api_key }}" }
+        body_format: json
+        body:
+          provider_id: "{{ providers.results[item - 1].json.provider_id }}"
+          type: mobile_push
+          key: benchmark-{{ item }}
+        status_code: 201
+      loop: "{{ range(1, dataset_channel_count + 1) | list }}"
+      register: channels
+
+    - name: Link every mobile application to its channel
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/channels/{{ channels.results[item - 1].json.channel_id }}/mobile-applications/{{ applications.results[item - 1].json.mobile_application_id }}"
+        method: PUT
+        headers: { X-Pushkin-API-Key: "{{ tenant_api_key.json.api_key }}" }
+        status_code: 204
+      loop: "{{ range(1, dataset_channel_count + 1) | list }}"
+
+    - name: Wait until every benchmark channel is active
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/channels/{{ channels.results[item - 1].json.channel_id }}"
+        method: GET
+        headers: { X-Pushkin-API-Key: "{{ tenant_api_key.json.api_key }}" }
+        status_code: 200
+      register: channel_status
+      until: channel_status.json.status == 'active'
+      retries: 30
+      delay: 1
+      loop: "{{ range(1, dataset_channel_count + 1) | list }}"
+
+    - name: Insert users and installations with one set-based SQL operation
+      become: true
+      delegate_to: "{{ groups['infrastructure'][0] }}"
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --file
+          - "{{ benchmark_root }}/infrastructure.compose.yml"
+          - exec
+          - --no-TTY
+          - postgres
+          - psql
+          - -v
+          - ON_ERROR_STOP=1
+          - -U
+          - pushkin
+          - -d
+          - pushkin
+          - -c
+          - "{{ lookup('ansible.builtin.template', 'templates/ten-channel-dataset.sql.j2') }}"
+      changed_when: true
+
+    - name: Save only the non-secret dataset identifiers locally
+      ansible.builtin.copy:
+        dest: "{{ state_file }}"
+        mode: "0600"
+        content: |
+          tenant_id: {{ tenant.json.tenant_id }}
+          api_key: {{ tenant_api_key.json.api_key }}
+          channel_keys:
+          {% for channel in range(1, dataset_channel_count + 1) %}
+            - benchmark-{{ channel }}
+          {% endfor %}
+      delegate_to: localhost

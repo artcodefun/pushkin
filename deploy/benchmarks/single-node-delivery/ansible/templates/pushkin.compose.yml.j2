@@ -1,0 +1,99 @@
+name: pushkin-single-node
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: pushkin
+      POSTGRES_PASSWORD: pushkin
+      POSTGRES_DB: pushkin
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U pushkin -d pushkin]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes: [postgres_data:/var/lib/postgresql/data]
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes: [redis_data:/data]
+
+  volume-init:
+    image: apache/kafka:4.3.1
+    user: "0:0"
+    command: [bash, -ec, "chown -R appuser:appuser /tmp/kraft-combined-logs"]
+    volumes: [kafka_data:/tmp/kraft-combined-logs]
+
+  kafka:
+    image: apache/kafka:4.3.1
+    hostname: kafka
+    depends_on:
+      volume-init: { condition: service_completed_successfully }
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: CONTROLLER://:29093,PLAINTEXT://:19092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+    volumes: [kafka_data:/tmp/kraft-combined-logs]
+    healthcheck:
+      test: [CMD-SHELL, "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list >/dev/null"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  migrate:
+    image: {{ pushkin_image }}
+    command: [/app/migrate.sh]
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
+      PUSHKIN_MIGRATIONS_TABLE: pushkin_schema_migrations
+
+  pushkin:
+    image: {{ pushkin_image }}
+    depends_on:
+      kafka: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    environment:
+      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
+      PUSHKIN_MIGRATIONS_TABLE: pushkin_schema_migrations
+      PUSHKIN_HTTP_ADDRESS: :8080
+      PUSHKIN_KAFKA_BROKERS: kafka:19092
+      PUSHKIN_REDIS_ADDRESS: redis:6379
+      PUSHKIN_INSTANCE_ID: pushkin-benchmark-single
+      PUSHKIN_API_KEY_HASH_PEPPER: {{ hostvars['localhost'].benchmark_api_key_pepper }}
+      PUSHKIN_ADMIN_MASTER_KEY: {{ hostvars['localhost'].benchmark_admin_key }}
+      PUSHKIN_CREDENTIALS_CIPHER_KEY_BASE64: {{ hostvars['localhost'].benchmark_cipher_key }}
+      PUSHKIN_USE_TEST_SENDER: "true"
+      PUSHKIN_TEST_SENDER_URL: http://{{ fake_fcm_private_ip }}:8081
+      PUSHKIN_DELIVERY_PROCESSING_BATCH_SIZE: "500"
+      PUSHKIN_DELIVERY_MAX_IN_FLIGHT: "5000"
+      PUSHKIN_CAMPAIGN_PROGRESS_BATCH_SIZE: "2000"
+      PUSHKIN_CAMPAIGN_STATS_BATCH_SIZE: "2000"
+      PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE: "5000"
+      PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE: "2500"
+      PUSHKIN_PROVIDER_DEFAULT_RATE_LIMIT_QPS: "100000"
+      PUSHKIN_PROVIDER_DEFAULT_RATE_LIMIT_BURST: "100000"
+    ports: ["127.0.0.1:8080:8080"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  kafka_data:

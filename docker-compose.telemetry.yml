@@ -1,0 +1,54 @@
+services:
+  telemetry:
+    image: grafana/otel-lgtm
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:4319:4317"
+    volumes:
+      - telemetry_data:/data
+
+  telemetry-collector:
+    image: otel/opentelemetry-collector-contrib:0.122.1
+    command: [--config=/etc/otelcol-contrib/config.yaml]
+    depends_on:
+      telemetry:
+        condition: service_started
+    volumes:
+      - ./deploy/telemetry/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.18.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    command: [--redis.addr=redis://redis:6379]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    command:
+      - --kafka.server=kafka:19092
+      - --group.filter=^pushkin\..*$
+      - --kafka.labels=pushkin-compose
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  server:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: telemetry:4317
+      OTEL_SERVICE_NAME: pushkin-compose
+      PUSHKIN_TELEMETRY_METRICS_EXPORT_INTERVAL: 5s
+    depends_on:
+      telemetry:
+        condition: service_started
+
+volumes:
+  telemetry_data:

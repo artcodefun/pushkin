@@ -1,0 +1,32 @@
+---
+- name: Start 100,000 immediate inline campaigns
+  hosts: localhost
+  gather_facts: false
+  vars:
+    state_file: "{{ benchmark_state_dir }}/dataset.yml"
+  tasks:
+    - name: Read scenario dataset state
+      ansible.builtin.include_vars:
+        file: "{{ state_file }}"
+
+    - name: Submit immediate inline campaigns
+      ansible.builtin.command:
+        argv:
+          - go
+          - run
+          - "{{ benchmark_source_dir }}/deploy/benchmarks/single-node-delivery/tools/inline_campaign_load.go"
+          - -target
+          - http://127.0.0.1:18080
+          - -count
+          - "100000"
+          - -concurrency
+          - "500"
+      environment:
+        PUSHKIN_BENCHMARK_API_KEY: "{{ api_key }}"
+      register: workload
+
+    - name: Save workload result
+      ansible.builtin.copy:
+        content: "{{ workload.stdout }}\n"
+        dest: "{{ benchmark_results_dir }}/workload.json"
+        mode: "0644"

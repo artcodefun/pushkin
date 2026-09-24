@@ -1,0 +1,16 @@
+# Local configuration and secrets.
+.env
+.env.*
+!.env.example
+
+# macOS Finder metadata.
+.DS_Store
+
+# Go build and test artifacts.
+/bin/
+*.test
+coverage.out
+
+# Local runtime data.
+/tmp/
+/data/

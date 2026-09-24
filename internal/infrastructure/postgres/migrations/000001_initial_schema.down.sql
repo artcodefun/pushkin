@@ -1,0 +1,9 @@
+DROP TABLE campaign_recipient_batches;
+DROP TABLE campaigns;
+DROP TABLE push_installations;
+DROP TABLE users;
+DROP TABLE channel_mobile_applications;
+DROP TABLE mobile_applications;
+DROP TABLE channels;
+DROP TABLE providers;
+DROP TABLE tenants;

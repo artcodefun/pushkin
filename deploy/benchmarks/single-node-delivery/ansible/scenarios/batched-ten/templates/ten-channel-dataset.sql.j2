@@ -1,0 +1,20 @@
+WITH generated AS (
+  SELECT generate_series(0, {{ channel_count * users_per_channel - 1 }}) AS sequence
+)
+INSERT INTO users (tenant_id, user_id, attributes, status, updated_at)
+SELECT '{{ tenant.json.tenant_id }}'::uuid, 'benchmark-user-' || sequence, '{}'::jsonb, 'active', now()
+FROM generated;
+
+WITH channel_apps AS (
+  SELECT mobile_applications.id AS mobile_application_id,
+         row_number() OVER (ORDER BY split_part(mobile_applications.package_name, '.', 4)::integer) - 1 AS channel_index
+  FROM mobile_applications
+  WHERE mobile_applications.package_name LIKE 'com.pushkin.benchmark.%'
+)
+INSERT INTO push_installations (id, tenant_id, user_id, mobile_application_id, installation_id, token, status, updated_at)
+SELECT ('00000000-0000-7000-8000-' || lpad(to_hex(sequence), 12, '0'))::uuid,
+       '{{ tenant.json.tenant_id }}'::uuid, 'benchmark-user-' || sequence,
+       channel_apps.mobile_application_id, 'benchmark-installation-' || sequence,
+       'benchmark-token-' || sequence, 'active', now()
+FROM generate_series(0, {{ channel_count * users_per_channel - 1 }}) AS sequence
+JOIN channel_apps ON channel_apps.channel_index = sequence / {{ users_per_channel }};

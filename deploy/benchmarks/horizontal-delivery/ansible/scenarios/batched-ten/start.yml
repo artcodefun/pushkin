@@ -1,0 +1,41 @@
+---
+- name: Start ten 100k-recipient batched campaigns
+  hosts: pushkin[0]
+  gather_facts: false
+  vars:
+    state_file: "{{ playbook_dir }}/../../../.state/dataset.yml"
+    api_address: http://127.0.0.1:8080
+  tasks:
+    - name: Read benchmark dataset state
+      ansible.builtin.include_vars:
+        file: "{{ state_file }}"
+
+    - name: Create campaigns
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/campaigns"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ api_key }}" }
+        body_format: json
+        body:
+          channel_key: "{{ item }}"
+          priority: high
+          notification: { title: Benchmark, body: batched delivery }
+        status_code: 201
+      loop: "{{ channel_keys }}"
+      register: campaigns
+
+    - name: Add source batches for each campaign
+      ansible.builtin.include_tasks: add-source-batches.yml
+      loop: "{{ campaigns.results | zip(range(0, dataset_channel_count)) | list }}"
+      loop_control:
+        loop_var: campaign_entry
+
+    - name: Start every campaign
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/campaigns/{{ item.json.campaign_id }}/start"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ api_key }}" }
+        body_format: json
+        body: {}
+        status_code: 200
+      loop: "{{ campaigns.results }}"

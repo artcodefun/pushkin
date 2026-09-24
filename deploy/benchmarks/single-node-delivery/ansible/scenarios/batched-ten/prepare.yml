@@ -1,0 +1,147 @@
+---
+- name: Prepare ten-channel batched-delivery dataset
+  hosts: pushkin
+  gather_facts: false
+  vars:
+    state_file: "{{ benchmark_state_dir }}/batched-ten.yml"
+    api_address: http://127.0.0.1:8080
+    channel_count: 10
+    users_per_channel: 100000
+    source_batch_size: 5000
+  tasks:
+    - name: Require a fresh scenario dataset
+      ansible.builtin.stat:
+        path: "{{ state_file }}"
+      delegate_to: localhost
+      register: dataset_state
+
+    - name: Fail when the scenario dataset already exists
+      ansible.builtin.fail:
+        msg: "Scenario state exists at {{ state_file }}. Run ./reset.sh before trying again."
+      when: dataset_state.stat.exists
+      delegate_to: localhost
+
+    - name: Create benchmark tenant
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/internal/tenants"
+        method: POST
+        headers: { X-Pushkin-Admin-Key: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/admin_key chars=ascii_letters,digits length=32') }}" }
+        body_format: json
+        body: { name: single-node-batched-ten, rate_limit_per_minute: 10000000 }
+        status_code: 201
+      register: tenant
+
+    - name: Issue benchmark tenant API key
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/internal/tenant-api-keys"
+        method: POST
+        headers: { X-Pushkin-Admin-Key: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/admin_key chars=ascii_letters,digits length=32') }}" }
+        body_format: json
+        body: { tenant_id: "{{ tenant.json.tenant_id }}", name: single-node-batched-ten }
+        status_code: 201
+      register: api_key
+
+    - name: Create providers
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/providers"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ api_key.json.api_key }}" }
+        body_format: json
+        body: { type: fcm, credentials: "benchmark-credential-{{ item }}", rate_limit_qps: 100000, rate_limit_burst: 100000 }
+        status_code: 201
+      loop: "{{ range(1, channel_count + 1) | list }}"
+      register: providers
+
+    - name: Create mobile applications
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/mobile-applications"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ api_key.json.api_key }}" }
+        body_format: json
+        body: { provider_id: "{{ providers.results[item - 1].json.provider_id }}", platform: android, package_name: "com.pushkin.benchmark.{{ item }}" }
+        status_code: 201
+      loop: "{{ range(1, channel_count + 1) | list }}"
+      register: applications
+
+    - name: Create channels
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/channels"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ api_key.json.api_key }}" }
+        body_format: json
+        body: { provider_id: "{{ providers.results[item - 1].json.provider_id }}", type: mobile_push, key: "benchmark-{{ item }}" }
+        status_code: 201
+      loop: "{{ range(1, channel_count + 1) | list }}"
+      register: channels
+
+    - name: Link mobile applications to channels
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/channels/{{ channels.results[item - 1].json.channel_id }}/mobile-applications/{{ applications.results[item - 1].json.mobile_application_id }}"
+        method: PUT
+        headers: { X-Pushkin-API-Key: "{{ api_key.json.api_key }}" }
+        status_code: 204
+      loop: "{{ range(1, channel_count + 1) | list }}"
+
+    - name: Wait until channels are active
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/channels/{{ channels.results[item - 1].json.channel_id }}"
+        method: GET
+        headers: { X-Pushkin-API-Key: "{{ api_key.json.api_key }}" }
+        status_code: 200
+      register: channel_status
+      until: channel_status.json.status == 'active'
+      retries: 30
+      delay: 1
+      loop: "{{ range(1, channel_count + 1) | list }}"
+
+    - name: Insert fixture users and installations
+      become: true
+      become_user: ubuntu
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --file
+          - "{{ benchmark_root }}/pushkin.compose.yml"
+          - exec
+          - --no-TTY
+          - postgres
+          - psql
+          - -v
+          - ON_ERROR_STOP=1
+          - -U
+          - pushkin
+          - -d
+          - pushkin
+          - -c
+          - "{{ lookup('ansible.builtin.template', 'templates/ten-channel-dataset.sql.j2') }}"
+      changed_when: true
+
+    - name: Create draft campaigns
+      ansible.builtin.uri:
+        url: "{{ api_address }}/api/v1/campaigns"
+        method: POST
+        headers: { X-Pushkin-API-Key: "{{ api_key.json.api_key }}" }
+        body_format: json
+        body: { channel_key: "benchmark-{{ item }}", priority: high, notification: { title: Benchmark, body: batched delivery } }
+        status_code: 201
+      loop: "{{ range(1, channel_count + 1) | list }}"
+      register: campaigns
+
+    - name: Add source batches to draft campaigns
+      ansible.builtin.include_tasks: add-source-batches.yml
+      loop: "{{ campaigns.results | zip(range(0, channel_count)) | list }}"
+      loop_control:
+        loop_var: campaign_entry
+
+    - name: Save scenario state
+      ansible.builtin.copy:
+        dest: "{{ state_file }}"
+        mode: "0600"
+        content: |
+          api_key: {{ api_key.json.api_key }}
+          campaign_ids:
+          {% for campaign in campaigns.results %}
+            - {{ campaign.json.campaign_id }}
+          {% endfor %}
+      delegate_to: localhost

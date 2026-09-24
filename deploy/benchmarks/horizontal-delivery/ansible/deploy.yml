@@ -1,0 +1,167 @@
+---
+- name: Generate local benchmark credentials and source archive
+  hosts: localhost
+  gather_facts: false
+  vars:
+    source_dir: "{{ pushkin_source_dir | mandatory }}"
+  tasks:
+    - name: Create local benchmark state directory
+      ansible.builtin.file:
+        path: "{{ benchmark_state_dir }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate test-only secrets once
+      ansible.builtin.set_fact:
+        benchmark_admin_key: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/admin_key chars=ascii_letters,digits length=32') }}"
+        benchmark_api_key_pepper: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/api_key_pepper chars=ascii_letters,digits length=32') }}"
+        benchmark_cipher_key: "{{ lookup('ansible.builtin.password', benchmark_state_dir ~ '/cipher_key chars=ascii_letters,digits length=32') | b64encode }}"
+
+    - name: Archive the current source revision for remote Docker builds
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --exclude=.git
+          - --exclude=./deploy
+          - --create
+          - --gzip
+          - --file={{ benchmark_source_archive }}
+          - --directory={{ source_dir }}
+          - .
+      changed_when: true
+
+- name: Install container runtime and build Pushkin image
+  hosts: all
+  become: true
+  tasks:
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name: [ca-certificates, docker.io, docker-compose-v2]
+        update_cache: true
+
+    - name: Allow ubuntu to run Docker
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Create benchmark directory
+      ansible.builtin.file:
+        path: "{{ benchmark_root }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Transfer current Pushkin source archive
+      ansible.builtin.copy:
+        src: "{{ benchmark_source_archive }}"
+        dest: "{{ benchmark_root }}/source.tar.gz"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+
+    - name: Replace the remote source with this local revision
+      ansible.builtin.file:
+        path: "{{ benchmark_root }}/source"
+        state: absent
+
+    - name: Create an empty source directory
+      ansible.builtin.file:
+        path: "{{ benchmark_root }}/source"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Extract Pushkin source
+      ansible.builtin.unarchive:
+        src: "{{ benchmark_root }}/source.tar.gz"
+        dest: "{{ benchmark_root }}/source"
+        remote_src: true
+        owner: ubuntu
+        group: ubuntu
+
+    - name: Build the current Pushkin image
+      ansible.builtin.command:
+        argv: [docker, build, --tag, "{{ pushkin_image }}", "{{ benchmark_root }}/source"]
+      changed_when: true
+
+- name: Start the shared data infrastructure
+  hosts: infrastructure
+  become: true
+  vars:
+    private_ip: "{{ hostvars[inventory_hostname].private_ip }}"
+  tasks:
+    - name: Render infrastructure Compose file
+      ansible.builtin.template:
+        src: templates/infrastructure.compose.yml.j2
+        dest: "{{ benchmark_root }}/infrastructure.compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+
+    - name: Start PostgreSQL Redis and Kafka
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", up, --detach]
+      changed_when: true
+
+    - name: Wait for PostgreSQL
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", exec, --no-TTY, postgres, pg_isready, -U, pushkin, -d, pushkin]
+      register: postgres_ready
+      retries: 30
+      delay: 2
+      until: postgres_ready.rc == 0
+      changed_when: false
+
+    - name: Run migrations
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", run, --rm, migrate]
+      changed_when: true
+
+- name: Start Fake FCM
+  hosts: fake_fcm
+  become: true
+  tasks:
+    - name: Render Fake FCM Compose file
+      ansible.builtin.template:
+        src: templates/fake-fcm.compose.yml.j2
+        dest: "{{ benchmark_root }}/fake-fcm.compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Start Fake FCM
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/fake-fcm.compose.yml", up, --detach]
+      changed_when: true
+
+- name: Start Pushkin instances
+  hosts: pushkin
+  become: true
+  vars:
+    infrastructure_private_ip: "{{ hostvars[groups['infrastructure'][0]].private_ip }}"
+    fake_fcm_private_ip: "{{ hostvars[groups['fake_fcm'][0]].private_ip }}"
+  tasks:
+    - name: Render Pushkin Compose file
+      ansible.builtin.template:
+        src: templates/pushkin.compose.yml.j2
+        dest: "{{ benchmark_root }}/pushkin.compose.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0600"
+
+    - name: Start Pushkin
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/pushkin.compose.yml", up, --detach]
+      changed_when: true
+
+    - name: Wait for this Pushkin instance
+      ansible.builtin.uri:
+        url: "{{ pushkin_api_address }}/health"
+        status_code: 200
+      register: pushkin_ready
+      retries: 45
+      delay: 2
+      until: pushkin_ready.status == 200

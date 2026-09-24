@@ -1,0 +1,10 @@
+INSERT INTO users (tenant_id, user_id, attributes, status, updated_at)
+SELECT '{{ tenant.json.tenant_id }}'::uuid, 'benchmark-user-' || sequence, '{}'::jsonb, 'active', now()
+FROM generate_series(0, {{ dataset_user_count - 1 }}) AS sequence;
+
+INSERT INTO push_installations (id, tenant_id, user_id, mobile_application_id, installation_id, token, status, updated_at)
+SELECT ('00000000-0000-7000-8000-' || lpad(to_hex(sequence), 12, '0'))::uuid,
+       '{{ tenant.json.tenant_id }}'::uuid, 'benchmark-user-' || sequence,
+       '{{ application.json.mobile_application_id }}'::uuid, 'benchmark-installation-' || sequence,
+       'benchmark-token-' || sequence, 'active', now()
+FROM generate_series(0, {{ dataset_user_count - 1 }}) AS sequence;
