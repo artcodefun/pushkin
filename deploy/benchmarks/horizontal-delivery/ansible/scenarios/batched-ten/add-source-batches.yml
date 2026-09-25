@@ -1,7 +1,7 @@
 ---
 - name: Add 5k-recipient source batches for campaign {{ campaign_entry.0.json.campaign_id }}
   ansible.builtin.uri:
-    url: "{{ api_address }}/api/v1/campaigns/{{ campaign_entry.0.json.campaign_id }}/recipients:batch"
+    url: "{{ api_address }}/api/v1/campaigns/{{ campaign_entry.0.json.campaign_id }}/recipients/batch"
     method: POST
     headers: { X-Pushkin-API-Key: "{{ api_key }}" }
     body_format: json

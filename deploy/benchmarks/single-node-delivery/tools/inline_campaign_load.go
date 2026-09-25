@@ -121,7 +121,7 @@ func createCampaign(ctx context.Context, client *http.Client, target, apiKey, ch
 	if err != nil {
 		return fmt.Errorf("encode campaign %d: %w", index, err)
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target+"/api/v1/campaigns:inline", bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target+"/api/v1/campaigns/inline", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request for campaign %d: %w", index, err)
 	}

@@ -50,13 +50,13 @@ func NewRouter(commands Commands, queries Queries, validator ports.TenantAPIKeyV
 	campaigns := handlers.NewCampaignHandler(commands.Campaign, queries.Campaign)
 	api := router.Group("/api/v1", middleware.RequireTenantAPIKey(validator))
 	api.POST("/campaigns", campaigns.Create)
-	api.POST("/campaigns:inline", campaigns.CreateInline)
+	api.POST("/campaigns/inline", campaigns.CreateInline)
 	api.GET("/campaigns/:campaign_id", campaigns.Get)
-	api.POST("/campaigns/:campaign_id/recipients:batch", campaigns.AddRecipients)
+	api.POST("/campaigns/:campaign_id/recipients/batch", campaigns.AddRecipients)
 	api.POST("/campaigns/:campaign_id/start", campaigns.Start)
 
 	installations := handlers.NewPushInstallationHandler(commands.PushInstallation)
-	api.POST("/push-installations:register", installations.Register)
+	api.POST("/push-installations/register", installations.Register)
 
 	notifications := handlers.NewNotificationHandler(commands.Notification, queries.Notification)
 	api.GET("/users/:user_id/notifications", notifications.List)

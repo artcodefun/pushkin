@@ -29,7 +29,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '503': { $ref: '#/components/responses/Unavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
-  /campaigns:inline:
+  /campaigns/inline:
     post:
       tags: [Campaigns]
       summary: Create and schedule an inline campaign
@@ -55,7 +55,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/Unavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
-  /campaigns/{campaign_id}/recipients:batch:
+  /campaigns/{campaign_id}/recipients/batch:
     post:
       tags: [Campaigns]
       summary: Add campaign recipients
@@ -241,7 +241,7 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/Unavailable' }
         '500': { $ref: '#/components/responses/InternalError' }
-  /push-installations:register:
+  /push-installations/register:
     post:
       tags: [Push Installations]
       summary: Register or update a push installation

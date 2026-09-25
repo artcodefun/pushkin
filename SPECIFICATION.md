@@ -170,7 +170,7 @@ DRAFT → SCHEDULED → STARTING → STARTED → COMPLETED
    (немедленный запуск). После неё новые batch-и отклоняются. В свежем
    `STARTING` поля `run_id` и `run_attempted_at` ещё пусты.
 
-Для **inline** кампании `POST /campaigns:inline` в одной PostgreSQL transaction
+Для **inline** кампании `POST /campaigns/inline` в одной PostgreSQL transaction
 создаёт кампанию с 1–100 `user_id`. Если передан будущий `scheduled_at`, она
 сразу переходит в `SCHEDULED`; если поле отсутствует — сразу в `STARTING` и
 будет запущена ближайшим циклом scheduler. Она не наблюдается в `DRAFT`, не
@@ -223,11 +223,11 @@ REST предназначен для небольших потоков и про
 
 ```text
 POST /api/v1/campaigns
-POST /api/v1/campaigns:inline
-POST /api/v1/campaigns/{campaign_id}/recipients:batch
+POST /api/v1/campaigns/inline
+POST /api/v1/campaigns/{campaign_id}/recipients/batch
 POST /api/v1/campaigns/{campaign_id}/start
 GET  /api/v1/campaigns/{campaign_id}
-POST /api/v1/push-installations:register
+POST /api/v1/push-installations/register
 GET  /api/v1/users/{user_id}/notifications
 POST /api/v1/users/{user_id}/notifications/{notification_id}/read
 ```
@@ -240,7 +240,7 @@ POST /api/v1/users/{user_id}/notifications/{notification_id}/read
 `POST /campaigns/{campaign_id}/start` принимает опциональный `scheduled_at`:
 будущее время планирует запуск, отсутствие поля запускает кампанию при ближайшем
 цикле scheduler.
-`POST /campaigns:inline` создаёт небольшую кампанию с неизменяемым списком от
+`POST /campaigns/inline` создаёт небольшую кампанию с неизменяемым списком от
 1 до 100 `user_id`. Необязательный будущий `scheduled_at` переводит её в
 `SCHEDULED`; отсутствие поля переводит её сразу в `STARTING`. Такая кампания не
 бывает `DRAFT`, не принимает source batch-ей и не требует отдельного `start`
