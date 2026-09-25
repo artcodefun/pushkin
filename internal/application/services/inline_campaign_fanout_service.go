@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/superman/pushkin/internal/application"
 	"github.com/superman/pushkin/internal/application/ports"
@@ -53,20 +54,26 @@ func (s *InlineCampaignFanoutService) Process(ctx context.Context) error {
 	}
 	messages := make([]ports.OutboundKafkaMessage, 0, len(campaigns)*2)
 	for _, campaign := range campaigns {
-		installationIDs := installationsByCampaign[campaign.ID()]
+		installationIDsByUser := installationsByCampaign[campaign.ID()]
 		deliveryTopic, err := contracts.DeliveryTopic(contracts.PriorityV1(campaign.Priority()), campaign.ChannelID())
 		if err != nil {
 			return fmt.Errorf("delivery topic: %w", err)
 		}
 		header := contracts.NewMessageHeaderV1()
-		for _, installationID := range installationIDs {
-			delivery, err := domain.NewDeliveryWork(domain.NewDeliveryWorkParams{CampaignID: campaign.ID(), TenantID: campaign.TenantID(), ChannelID: campaign.ChannelID(), PushInstallationID: installationID, Priority: campaign.Priority()})
-			if err != nil {
-				return fmt.Errorf("new delivery work: %w", err)
+		deliveryCount := 0
+		for _, userID := range campaign.InlineRecipients() {
+			createdAt := time.Now().UTC()
+			notificationID := domain.NewNotificationID()
+			for _, installationID := range installationIDsByUser[userID] {
+				delivery, err := domain.NewDeliveryWork(domain.NewDeliveryWorkParams{CampaignID: campaign.ID(), TenantID: campaign.TenantID(), NotificationID: notificationID, UserID: userID, NotificationCreatedAt: createdAt, ChannelID: campaign.ChannelID(), PushInstallationID: installationID, Priority: campaign.Priority()})
+				if err != nil {
+					return fmt.Errorf("new delivery work: %w", err)
+				}
+				messages = append(messages, ports.OutboundKafkaMessage{Topic: deliveryTopic, Key: []byte(delivery.ID().String()), Value: contracts.NewDeliveryWorkV1(delivery)})
+				deliveryCount++
 			}
-			messages = append(messages, ports.OutboundKafkaMessage{Topic: deliveryTopic, Key: []byte(delivery.ID().String()), Value: contracts.NewDeliveryWorkV1(delivery)})
 		}
-		messages = append(messages, ports.OutboundKafkaMessage{Topic: contracts.TopicCampaignProgress, Key: []byte(campaign.ID().String()), Value: contracts.InlineCampaignFanoutCompletedV1{MessageHeaderV1: header, Type: contracts.CampaignProgressEventTypeSourceBatchFannedOut, CampaignID: campaign.ID(), DeliveryCount: uint64(len(installationIDs))}})
+		messages = append(messages, ports.OutboundKafkaMessage{Topic: contracts.TopicCampaignProgress, Key: []byte(campaign.ID().String()), Value: contracts.InlineCampaignFanoutCompletedV1{MessageHeaderV1: header, Type: contracts.CampaignProgressEventTypeSourceBatchFannedOut, CampaignID: campaign.ID(), DeliveryCount: uint64(deliveryCount)}})
 	}
 	return s.kafkaConsumer.Complete(ctx, messages)
 }
@@ -103,7 +110,7 @@ func (s *InlineCampaignFanoutService) loadCampaigns(ctx context.Context, records
 	return campaigns, nil
 }
 
-func (s *InlineCampaignFanoutService) loadInstallations(ctx context.Context, campaigns []*domain.Campaign) (map[domain.CampaignID][]domain.PushInstallationID, error) {
+func (s *InlineCampaignFanoutService) loadInstallations(ctx context.Context, campaigns []*domain.Campaign) (map[domain.CampaignID]map[domain.UserID][]domain.PushInstallationID, error) {
 	channelUsers := make(map[domain.ChannelID]map[domain.UserID]struct{})
 	channelTenants := make(map[domain.ChannelID]domain.TenantID)
 	channelIDs := make([]domain.ChannelID, 0, len(campaigns))
@@ -135,10 +142,11 @@ func (s *InlineCampaignFanoutService) loadInstallations(ctx context.Context, cam
 		}
 		installationsByChannelUser[channelID] = installationIDsByUser
 	}
-	result := make(map[domain.CampaignID][]domain.PushInstallationID, len(campaigns))
+	result := make(map[domain.CampaignID]map[domain.UserID][]domain.PushInstallationID, len(campaigns))
 	for _, campaign := range campaigns {
+		result[campaign.ID()] = make(map[domain.UserID][]domain.PushInstallationID, len(campaign.InlineRecipients()))
 		for _, userID := range campaign.InlineRecipients() {
-			result[campaign.ID()] = append(result[campaign.ID()], installationsByChannelUser[campaign.ChannelID()][userID]...)
+			result[campaign.ID()][userID] = installationsByChannelUser[campaign.ChannelID()][userID]
 		}
 	}
 	return result, nil

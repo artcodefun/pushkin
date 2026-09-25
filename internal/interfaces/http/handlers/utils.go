@@ -3,6 +3,8 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"uuid"
@@ -30,6 +32,18 @@ func parseUUID(c *gin.Context, value string) (uuid.UUID, bool) {
 		return uuid.Nil(), false
 	}
 	return id, true
+}
+
+func optionalPositiveQueryInt(c *gin.Context, name string) (int, error) {
+	value := strings.TrimSpace(c.Query(name))
+	if value == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return 0, strconv.ErrSyntax
+	}
+	return parsed, nil
 }
 
 func writeError(c *gin.Context, err error) bool {

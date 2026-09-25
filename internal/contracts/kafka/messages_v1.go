@@ -20,6 +20,7 @@ const (
 	TopicCampaignInlineFanout             Topic = "pushkin.campaign.inline.fanout"
 	TopicCampaignProgress                 Topic = "pushkin.campaign.progress"
 	TopicCampaignStats                    Topic = "pushkin.campaign.stats"
+	TopicNotificationAccepted             Topic = "pushkin.notification.accepted"
 )
 
 type PriorityV1 string
@@ -104,6 +105,7 @@ const (
 	MessageTypeInlineCampaignFanoutCompletedV1     MessageTypeV1 = "inline_campaign_fanout_completed"
 	MessageTypeCampaignProgressDeltaV1             MessageTypeV1 = "campaign_progress_delta"
 	MessageTypeCampaignStatsSnapshotV1             MessageTypeV1 = "campaign_stats_snapshot"
+	MessageTypeNotificationAcceptedV1              MessageTypeV1 = "notification_accepted"
 )
 
 // EnvelopeV1 is the versioned wire shape of every internal Kafka record.
@@ -171,27 +173,33 @@ func (InlineCampaignFanoutV1) MessageType() MessageTypeV1 { return MessageTypeIn
 // is used both in a delivery topic and as the immutable portion of RetryWorkV1.
 type DeliveryWorkV1 struct {
 	MessageHeaderV1
-	DeliveryID         uuid.UUID `json:"delivery_id"`
-	CampaignID         uuid.UUID `json:"campaign_id"`
-	TenantID           uuid.UUID `json:"tenant_id"`
-	ChannelID          uuid.UUID `json:"channel_id"`
-	PushInstallationID uuid.UUID `json:"push_installation_id"`
-	Priority           string    `json:"priority"`
-	RetryAttempt       uint      `json:"retry_attempt"`
+	DeliveryID            uuid.UUID `json:"delivery_id"`
+	NotificationID        uuid.UUID `json:"notification_id"`
+	CampaignID            uuid.UUID `json:"campaign_id"`
+	TenantID              uuid.UUID `json:"tenant_id"`
+	UserID                string    `json:"user_id"`
+	ChannelID             uuid.UUID `json:"channel_id"`
+	PushInstallationID    uuid.UUID `json:"push_installation_id"`
+	Priority              string    `json:"priority"`
+	RetryAttempt          uint      `json:"retry_attempt"`
+	NotificationCreatedAt time.Time `json:"notification_created_at"`
 }
 
 // NewDeliveryWorkV1 translates one domain delivery work item into its
 // immutable internal Kafka record.
 func NewDeliveryWorkV1(work domain.DeliveryWork) DeliveryWorkV1 {
 	return DeliveryWorkV1{
-		MessageHeaderV1:    NewMessageHeaderV1(),
-		DeliveryID:         work.ID(),
-		CampaignID:         work.CampaignID(),
-		TenantID:           work.TenantID(),
-		ChannelID:          work.ChannelID(),
-		PushInstallationID: work.PushInstallationID(),
-		Priority:           string(work.Priority()),
-		RetryAttempt:       work.RetryAttempt(),
+		MessageHeaderV1:       NewMessageHeaderV1(),
+		DeliveryID:            work.ID(),
+		NotificationID:        work.NotificationID(),
+		CampaignID:            work.CampaignID(),
+		TenantID:              work.TenantID(),
+		UserID:                string(work.UserID()),
+		ChannelID:             work.ChannelID(),
+		PushInstallationID:    work.PushInstallationID(),
+		Priority:              string(work.Priority()),
+		RetryAttempt:          work.RetryAttempt(),
+		NotificationCreatedAt: work.NotificationCreatedAt(),
 	}
 }
 
@@ -205,6 +213,50 @@ type RetryWorkV1 struct {
 }
 
 func (RetryWorkV1) MessageType() MessageTypeV1 { return MessageTypeRetryWorkV1 }
+
+// NotificationAcceptedV1 is an idempotent notification projection request emitted
+// after a provider accepts a logical notification. It intentionally describes
+// a user notification rather than an individual device delivery.
+type NotificationAcceptedV1 struct {
+	MessageHeaderV1
+	NotificationID uuid.UUID             `json:"notification_id"`
+	CampaignID     uuid.UUID             `json:"campaign_id"`
+	TenantID       uuid.UUID             `json:"tenant_id"`
+	UserID         string                `json:"user_id"`
+	CreatedAt      time.Time             `json:"created_at"`
+	Payload        NotificationPayloadV1 `json:"payload"`
+}
+
+func (NotificationAcceptedV1) MessageType() MessageTypeV1 { return MessageTypeNotificationAcceptedV1 }
+
+func NewNotificationAcceptedV1(notification domain.Notification) NotificationAcceptedV1 {
+	return NotificationAcceptedV1{
+		MessageHeaderV1: NewMessageHeaderV1(),
+		NotificationID:  notification.ID(),
+		CampaignID:      notification.CampaignID(),
+		TenantID:        notification.TenantID(),
+		UserID:          string(notification.UserID()),
+		CreatedAt:       notification.CreatedAt(),
+		Payload:         NewNotificationPayloadV1(notification.Payload()),
+	}
+}
+
+type NotificationPayloadV1 struct {
+	Title    string            `json:"title"`
+	Body     string            `json:"body"`
+	ImageURL string            `json:"image_url"`
+	Data     map[string]string `json:"data"`
+}
+
+func NewNotificationPayloadV1(payload domain.PushPayload) NotificationPayloadV1 {
+	return NotificationPayloadV1{
+		Title: payload.Title(), Body: payload.Body(), ImageURL: payload.ImageURL(), Data: payload.Data(),
+	}
+}
+
+func (p NotificationPayloadV1) PushPayload() (domain.PushPayload, error) {
+	return domain.NewPushPayload(p.Title, p.Body, p.ImageURL, p.Data)
+}
 
 type CampaignProgressEventTypeV1 string
 

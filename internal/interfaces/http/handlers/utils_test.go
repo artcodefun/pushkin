@@ -52,3 +52,27 @@ func TestWriteErrorReturnsFalseWithoutError(t *testing.T) {
 		t.Fatal("writeError returned true")
 	}
 }
+
+func TestOptionalPositiveQueryInt(t *testing.T) {
+	testCases := []struct {
+		query   string
+		want    int
+		wantErr bool
+	}{
+		{query: "", want: 0},
+		{query: "?limit=25", want: 25},
+		{query: "?limit=0", wantErr: true},
+		{query: "?limit=invalid", wantErr: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.query, func(t *testing.T) {
+			context, _ := gin.CreateTestContext(httptest.NewRecorder())
+			context.Request = httptest.NewRequest(http.MethodGet, "/notifications"+testCase.query, nil)
+			value, err := optionalPositiveQueryInt(context, "limit")
+			if (err != nil) != testCase.wantErr || value != testCase.want {
+				t.Fatalf("optionalPositiveQueryInt() = %d, %v; want %d, error=%t", value, err, testCase.want, testCase.wantErr)
+			}
+		})
+	}
+}

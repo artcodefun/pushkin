@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/superman/pushkin/internal/domain"
@@ -21,6 +22,24 @@ func TestDeliveryTopic(t *testing.T) {
 	}
 	if _, err := DeliveryTopic("unknown", channelID); err == nil {
 		t.Fatal("invalid priority must be rejected")
+	}
+}
+
+func TestNewDeliveryWorkV1IncludesNotificationIdentity(t *testing.T) {
+	t.Parallel()
+
+	campaignID := uuid.NewV7()
+	tenantID := uuid.NewV7()
+	work, err := domain.NewDeliveryWork(domain.NewDeliveryWorkParams{
+		CampaignID: campaignID, TenantID: tenantID, NotificationID: domain.NewNotificationID(), UserID: "user-1", NotificationCreatedAt: time.Now(), ChannelID: uuid.NewV7(),
+		PushInstallationID: uuid.NewV7(), Priority: domain.PriorityHigh,
+	})
+	if err != nil {
+		t.Fatalf("new delivery work: %v", err)
+	}
+	message := NewDeliveryWorkV1(work)
+	if message.NotificationID != work.NotificationID() || message.UserID != string(work.UserID()) || !message.NotificationCreatedAt.Equal(work.NotificationCreatedAt()) {
+		t.Fatalf("unexpected notification delivery work: %+v", message)
 	}
 }
 
@@ -77,12 +96,17 @@ func TestNewMessageHeaderV1(t *testing.T) {
 func TestNewDeliveryWorkV1(t *testing.T) {
 	t.Parallel()
 
+	campaignID := uuid.NewV7()
+	tenantID := uuid.NewV7()
 	work, err := domain.NewDeliveryWork(domain.NewDeliveryWorkParams{
-		CampaignID:         uuid.NewV7(),
-		TenantID:           uuid.NewV7(),
-		ChannelID:          uuid.NewV7(),
-		PushInstallationID: uuid.NewV7(),
-		Priority:           domain.PriorityHigh,
+		CampaignID:            campaignID,
+		TenantID:              tenantID,
+		NotificationID:        domain.NewNotificationID(),
+		UserID:                "user-1",
+		NotificationCreatedAt: time.Now(),
+		ChannelID:             uuid.NewV7(),
+		PushInstallationID:    uuid.NewV7(),
+		Priority:              domain.PriorityHigh,
 	})
 	if err != nil {
 		t.Fatalf("new delivery work: %v", err)
@@ -93,6 +117,8 @@ func TestNewDeliveryWorkV1(t *testing.T) {
 		message.DeliveryID != work.ID() ||
 		message.CampaignID != work.CampaignID() ||
 		message.TenantID != work.TenantID() ||
+		message.NotificationID != work.NotificationID() ||
+		message.UserID != string(work.UserID()) ||
 		message.ChannelID != work.ChannelID() ||
 		message.PushInstallationID != work.PushInstallationID() ||
 		message.Priority != string(work.Priority()) ||

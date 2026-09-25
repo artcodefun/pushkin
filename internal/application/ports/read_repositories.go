@@ -32,3 +32,7 @@ type MobileApplicationReadRepository interface {
 	FindByID(ctx context.Context, tenantID domain.TenantID, id domain.MobileApplicationID) (*readmodels.MobileApplication, error)
 	List(ctx context.Context, tenantID domain.TenantID) ([]readmodels.MobileApplication, error)
 }
+
+type NotificationReadRepository interface {
+	List(ctx context.Context, tenantID domain.TenantID, userID domain.UserID, cursor string, limit int) (readmodels.NotificationPage, error)
+}

@@ -21,10 +21,13 @@ func TestDeliveryServiceProcessPublishesAcceptedResultAndProgress(t *testing.T) 
 	if fixture.limiter.permits != 1 || fixture.sender.calls != 1 {
 		t.Fatalf("unexpected rate/send calls: permits=%d calls=%d", fixture.limiter.permits, fixture.sender.calls)
 	}
-	if len(fixture.pipeline.transaction.messages) != 1 {
-		t.Fatalf("expected progress delta, got %d messages", len(fixture.pipeline.transaction.messages))
+	if len(fixture.pipeline.transaction.messages) != 2 {
+		t.Fatalf("expected notification and progress messages, got %d", len(fixture.pipeline.transaction.messages))
 	}
-	delta, ok := fixture.pipeline.transaction.messages[0].Value.(contracts.CampaignProgressDeltaV1)
+	if _, ok := fixture.pipeline.transaction.messages[0].Value.(contracts.NotificationAcceptedV1); !ok {
+		t.Fatalf("expected accepted notification, got %T", fixture.pipeline.transaction.messages[0].Value)
+	}
+	delta, ok := fixture.pipeline.transaction.messages[1].Value.(contracts.CampaignProgressDeltaV1)
 	if !ok || delta.DeliveryAcceptedDelta != 1 || delta.DeliveryFailedDelta != 0 {
 		t.Fatalf("unexpected progress delta: %#v", fixture.pipeline.transaction.messages[1].Value)
 	}
@@ -152,7 +155,7 @@ func newDeliveryServiceFixture(t *testing.T, outcome ports.PushSendResult) deliv
 		t.Fatalf("delivery topic: %v", err)
 	}
 	record := ports.KafkaRecord{
-		Value:  contracts.DeliveryWorkV1{MessageHeaderV1: contracts.NewMessageHeaderV1(), DeliveryID: uuid.NewV7(), CampaignID: campaign.ID(), TenantID: tenantID, ChannelID: channel.ID(), PushInstallationID: installationID, Priority: string(domain.PriorityNormal)},
+		Value:  contracts.DeliveryWorkV1{MessageHeaderV1: contracts.NewMessageHeaderV1(), DeliveryID: uuid.NewV7(), NotificationID: uuid.NewV7(), CampaignID: campaign.ID(), TenantID: tenantID, UserID: "user-1", ChannelID: channel.ID(), PushInstallationID: installationID, Priority: string(domain.PriorityNormal), NotificationCreatedAt: time.Now().UTC()},
 		Offset: ports.KafkaOffset{Topic: topic, Partition: 3, Offset: 11},
 	}
 	pipeline := &deliveryKafkaPipeline{records: []ports.KafkaRecord{record}}

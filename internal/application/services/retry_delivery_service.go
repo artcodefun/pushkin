@@ -179,6 +179,7 @@ func (s *RetryDeliveryService) rewindAndPause(
 func (s *RetryDeliveryService) validateWork(retry contracts.RetryWorkV1) (contracts.DeliveryWorkV1, error) {
 	work := retry.DeliveryWorkV1
 	if work.DeliveryID == (uuid.UUID{}) || work.CampaignID == (uuid.UUID{}) || work.TenantID == (uuid.UUID{}) ||
+		work.NotificationID == (uuid.UUID{}) || work.UserID == "" || work.NotificationCreatedAt.IsZero() ||
 		work.ChannelID != s.channelID || work.PushInstallationID == (uuid.UUID{}) ||
 		work.RetryAttempt == 0 || work.RetryAttempt > domain.MaxDeliveryRetryAttempts {
 		return contracts.DeliveryWorkV1{}, fmt.Errorf("retry delivery work: %w", application.ErrValidation)
@@ -258,7 +259,12 @@ func (s *RetryDeliveryService) resultMessages(
 
 	switch delivery.result.Outcome {
 	case ports.PushSendOutcomeAccepted:
-		return terminalProgressMessage(work, 1, 0), nil
+		messages := terminalProgressMessage(work, 1, 0)
+		notificationMessage, err := acceptedNotificationMessage(work, delivery.payload)
+		if err != nil {
+			return nil, err
+		}
+		return append(messages, notificationMessage), nil
 	case ports.PushSendOutcomeInvalidToken:
 		if err := s.installations.Deactivate(ctx, work.TenantID, work.PushInstallationID); err != nil {
 			return nil, err

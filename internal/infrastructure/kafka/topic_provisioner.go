@@ -80,7 +80,10 @@ func (p *TopicProvisioner) EnsureSystemTopics(ctx context.Context) error {
 	if err := p.ensure(ctx, p.progressTopicConfig(), contracts.TopicCampaignProgress); err != nil {
 		return err
 	}
-	return p.ensure(ctx, p.statsTopicConfig(), contracts.TopicCampaignStats)
+	if err := p.ensure(ctx, p.statsTopicConfig(), contracts.TopicCampaignStats); err != nil {
+		return err
+	}
+	return p.ensure(ctx, p.workTopicConfig(), contracts.TopicNotificationAccepted)
 }
 
 // EnsureChannelTopics creates the delivery and retry topics for one Channel

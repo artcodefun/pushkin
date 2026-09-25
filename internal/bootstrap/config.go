@@ -10,52 +10,58 @@ import (
 )
 
 const (
-	defaultSourceBatchMaxSize             = 5_000
-	defaultDeliveryProcessingBatchSize    = 100
-	defaultDeliveryMaxInFlight            = 500
-	defaultCampaignStartingTimeout        = time.Minute
-	defaultSchedulerInterval              = time.Second
-	defaultSchedulerBatchSize             = 100
-	defaultCampaignProgressBatchSize      = 100
-	defaultCampaignStatsBatchSize         = 1_000
-	defaultInlineCampaignRunBatchSize     = 100
-	defaultInlineCampaignFanoutBatchSize  = 100
-	defaultChannelProvisioningInterval    = time.Second
-	defaultKafkaWorkRetention             = 7 * 24 * time.Hour
-	defaultKafkaProgressRetention         = 14 * 24 * time.Hour
-	defaultTelemetryMetricsExportInterval = 10 * time.Second
+	defaultSourceBatchMaxSize              = 5_000
+	defaultDeliveryProcessingBatchSize     = 100
+	defaultDeliveryMaxInFlight             = 500
+	defaultCampaignStartingTimeout         = time.Minute
+	defaultSchedulerInterval               = time.Second
+	defaultSchedulerBatchSize              = 100
+	defaultCampaignProgressBatchSize       = 100
+	defaultCampaignStatsBatchSize          = 1_000
+	defaultInlineCampaignRunBatchSize      = 100
+	defaultInlineCampaignFanoutBatchSize   = 100
+	defaultNotificationProjectionBatchSize = 100
+	defaultNotificationWriteMaxInFlight    = 50
+	defaultChannelProvisioningInterval     = time.Second
+	defaultKafkaWorkRetention              = 7 * 24 * time.Hour
+	defaultKafkaProgressRetention          = 14 * 24 * time.Hour
+	defaultTelemetryMetricsExportInterval  = 10 * time.Second
 )
 
 // Config contains the process-wide settings required to construct Pushkin.
 // It is parsed once at the composition root; application and domain code do
 // not read environment variables.
 type Config struct {
-	PostgresDSN                    string
-	HTTPAddress                    string
-	KafkaBrokers                   []string
-	InstanceID                     string
-	RedisAddress                   string
-	CredentialsCipherKey           []byte
-	APIKeyHashPepper               []byte
-	AdminMasterKey                 string
-	SourceBatchMaxSize             int
-	DeliveryProcessingBatchSize    int
-	DeliveryMaxInFlight            int
-	CampaignStartingTimeout        time.Duration
-	SchedulerInterval              time.Duration
-	SchedulerBatchSize             int
-	CampaignProgressBatchSize      int
-	CampaignStatsBatchSize         int
-	InlineCampaignRunBatchSize     int
-	InlineCampaignFanoutBatchSize  int
-	ChannelProvisioningInterval    time.Duration
-	KafkaWorkRetention             time.Duration
-	KafkaProgressRetention         time.Duration
-	UseTestSender                  bool
-	TestSenderURL                  string
-	TelemetryOTLPEndpoint          string
-	TelemetryServiceName           string
-	TelemetryMetricsExportInterval time.Duration
+	PostgresDSN                     string
+	HTTPAddress                     string
+	KafkaBrokers                    []string
+	InstanceID                      string
+	RedisAddress                    string
+	CassandraHosts                  []string
+	CassandraKeyspace               string
+	CredentialsCipherKey            []byte
+	APIKeyHashPepper                []byte
+	AdminMasterKey                  string
+	SourceBatchMaxSize              int
+	DeliveryProcessingBatchSize     int
+	DeliveryMaxInFlight             int
+	CampaignStartingTimeout         time.Duration
+	SchedulerInterval               time.Duration
+	SchedulerBatchSize              int
+	CampaignProgressBatchSize       int
+	CampaignStatsBatchSize          int
+	InlineCampaignRunBatchSize      int
+	InlineCampaignFanoutBatchSize   int
+	NotificationProjectionBatchSize int
+	NotificationWriteMaxInFlight    int
+	ChannelProvisioningInterval     time.Duration
+	KafkaWorkRetention              time.Duration
+	KafkaProgressRetention          time.Duration
+	UseTestSender                   bool
+	TestSenderURL                   string
+	TelemetryOTLPEndpoint           string
+	TelemetryServiceName            string
+	TelemetryMetricsExportInterval  time.Duration
 }
 
 // LoadConfigFromEnv parses and validates the environment configuration for
@@ -82,6 +88,14 @@ func loadConfig(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 	redisAddress, err := requiredEnv(getenv, "PUSHKIN_REDIS_ADDRESS")
+	if err != nil {
+		return Config{}, err
+	}
+	cassandraHosts, err := commaSeparatedEnv(getenv, "PUSHKIN_CASSANDRA_HOSTS")
+	if err != nil {
+		return Config{}, err
+	}
+	cassandraKeyspace, err := requiredEnv(getenv, "PUSHKIN_CASSANDRA_KEYSPACE")
 	if err != nil {
 		return Config{}, err
 	}
@@ -121,6 +135,22 @@ func loadConfig(getenv func(string) string) (Config, error) {
 		getenv,
 		"PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE",
 		defaultInlineCampaignFanoutBatchSize,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	notificationProjectionBatchSize, err := positiveIntEnv(
+		getenv,
+		"PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE",
+		defaultNotificationProjectionBatchSize,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	notificationWriteMaxInFlight, err := positiveIntEnv(
+		getenv,
+		"PUSHKIN_NOTIFICATION_WRITE_MAX_IN_FLIGHT",
+		defaultNotificationWriteMaxInFlight,
 	)
 	if err != nil {
 		return Config{}, err
@@ -195,32 +225,36 @@ func loadConfig(getenv func(string) string) (Config, error) {
 	}
 
 	return Config{
-		PostgresDSN:                    postgresDSN,
-		HTTPAddress:                    httpAddress,
-		KafkaBrokers:                   brokers,
-		InstanceID:                     instanceID,
-		RedisAddress:                   redisAddress,
-		CredentialsCipherKey:           cipherKey,
-		APIKeyHashPepper:               []byte(apiKeyHashPepper),
-		AdminMasterKey:                 adminMasterKey,
-		SourceBatchMaxSize:             sourceBatchMaxSize,
-		DeliveryProcessingBatchSize:    deliveryBatchSize,
-		DeliveryMaxInFlight:            deliveryMaxInFlight,
-		CampaignStartingTimeout:        startingTimeout,
-		SchedulerInterval:              schedulerInterval,
-		SchedulerBatchSize:             schedulerBatchSize,
-		CampaignProgressBatchSize:      campaignProgressBatchSize,
-		CampaignStatsBatchSize:         campaignStatsBatchSize,
-		InlineCampaignRunBatchSize:     inlineCampaignRunBatchSize,
-		InlineCampaignFanoutBatchSize:  inlineCampaignFanoutBatchSize,
-		ChannelProvisioningInterval:    channelProvisioningInterval,
-		KafkaWorkRetention:             workRetention,
-		KafkaProgressRetention:         progressRetention,
-		UseTestSender:                  useTestSender,
-		TestSenderURL:                  testSenderURL,
-		TelemetryOTLPEndpoint:          strings.TrimSpace(getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
-		TelemetryServiceName:           telemetryServiceName,
-		TelemetryMetricsExportInterval: telemetryExportInterval,
+		PostgresDSN:                     postgresDSN,
+		HTTPAddress:                     httpAddress,
+		KafkaBrokers:                    brokers,
+		InstanceID:                      instanceID,
+		RedisAddress:                    redisAddress,
+		CassandraHosts:                  cassandraHosts,
+		CassandraKeyspace:               cassandraKeyspace,
+		CredentialsCipherKey:            cipherKey,
+		APIKeyHashPepper:                []byte(apiKeyHashPepper),
+		AdminMasterKey:                  adminMasterKey,
+		SourceBatchMaxSize:              sourceBatchMaxSize,
+		DeliveryProcessingBatchSize:     deliveryBatchSize,
+		DeliveryMaxInFlight:             deliveryMaxInFlight,
+		CampaignStartingTimeout:         startingTimeout,
+		SchedulerInterval:               schedulerInterval,
+		SchedulerBatchSize:              schedulerBatchSize,
+		CampaignProgressBatchSize:       campaignProgressBatchSize,
+		CampaignStatsBatchSize:          campaignStatsBatchSize,
+		InlineCampaignRunBatchSize:      inlineCampaignRunBatchSize,
+		InlineCampaignFanoutBatchSize:   inlineCampaignFanoutBatchSize,
+		NotificationProjectionBatchSize: notificationProjectionBatchSize,
+		NotificationWriteMaxInFlight:    notificationWriteMaxInFlight,
+		ChannelProvisioningInterval:     channelProvisioningInterval,
+		KafkaWorkRetention:              workRetention,
+		KafkaProgressRetention:          progressRetention,
+		UseTestSender:                   useTestSender,
+		TestSenderURL:                   testSenderURL,
+		TelemetryOTLPEndpoint:           strings.TrimSpace(getenv("OTEL_EXPORTER_OTLP_ENDPOINT")),
+		TelemetryServiceName:            telemetryServiceName,
+		TelemetryMetricsExportInterval:  telemetryExportInterval,
 	}, nil
 }
 

@@ -19,6 +19,7 @@ type Commands struct {
 	Tenant            application.TenantCommands
 	TenantAPIKey      application.TenantAPIKeyCommands
 	PushInstallation  application.PushInstallationCommands
+	Notification      application.NotificationCommands
 }
 
 type Queries struct {
@@ -27,6 +28,7 @@ type Queries struct {
 	Provider          application.ProviderQueries
 	MobileApplication application.MobileApplicationQueries
 	Channel           application.ChannelQueries
+	Notification      application.NotificationQueries
 }
 
 func NewRouter(commands Commands, queries Queries, validator ports.TenantAPIKeyValidator, adminMasterKey string) *gin.Engine {
@@ -55,6 +57,10 @@ func NewRouter(commands Commands, queries Queries, validator ports.TenantAPIKeyV
 
 	installations := handlers.NewPushInstallationHandler(commands.PushInstallation)
 	api.POST("/push-installations:register", installations.Register)
+
+	notifications := handlers.NewNotificationHandler(commands.Notification, queries.Notification)
+	api.GET("/users/:user_id/notifications", notifications.List)
+	api.POST("/users/:user_id/notifications/:notification_id/read", notifications.MarkRead)
 
 	providers := handlers.NewProviderHandler(commands.Provider, queries.Provider)
 	api.POST("/providers", providers.Create)

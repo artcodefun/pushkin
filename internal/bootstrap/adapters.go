@@ -6,12 +6,15 @@ import (
 	"net/http"
 	"time"
 
+	gocql "github.com/apache/cassandra-gocql-driver/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	redisclient "github.com/redis/go-redis/v9"
 
 	publickafka "github.com/superman/pushkin/api/kafka/v1"
 	"github.com/superman/pushkin/internal/application/ports"
 	contracts "github.com/superman/pushkin/internal/contracts/kafka"
+	cassandrareadrepo "github.com/superman/pushkin/internal/infrastructure/cassandra/readrepo"
+	cassandrarepo "github.com/superman/pushkin/internal/infrastructure/cassandra/repo"
 	"github.com/superman/pushkin/internal/infrastructure/credentials"
 	infrakafka "github.com/superman/pushkin/internal/infrastructure/kafka"
 	"github.com/superman/pushkin/internal/infrastructure/postgres/gen"
@@ -36,6 +39,7 @@ type Adapters struct {
 	Tenants            ports.TenantRepository
 	TenantAPIKeys      ports.TenantAPIKeyRepository
 	Users              ports.UserRepository
+	Notifications      ports.NotificationRepository
 	Transactions       ports.TransactionManager
 
 	CampaignReads          ports.CampaignReadRepository
@@ -43,6 +47,7 @@ type Adapters struct {
 	ChannelReads           ports.ChannelReadRepository
 	MobileApplicationReads ports.MobileApplicationReadRepository
 	ProviderReads          ports.ProviderReadRepository
+	NotificationReads      ports.NotificationReadRepository
 
 	CredentialsCipher     ports.CredentialsCipher
 	TenantAPIKeyHasher    ports.TenantAPIKeyHasher
@@ -54,17 +59,19 @@ type Adapters struct {
 
 	pool             *pgxpool.Pool
 	redisClient      *redisclient.Client
+	cassandraSession *gocql.Session
 	producer         *infrakafka.Producer
 	topicProvisioner *infrakafka.TopicProvisioner
 
-	batchedCampaignRunConsumer   *infrakafka.TransactionalConsumer
-	batchedSourceFanoutConsumer  *infrakafka.TransactionalConsumer
-	inlineCampaignRunConsumer    *infrakafka.TransactionalConsumer
-	inlineCampaignFanoutConsumer *infrakafka.TransactionalConsumer
-	campaignProgressConsumer     *infrakafka.TransactionalConsumer
-	campaignStatsConsumer        *infrakafka.Consumer
-	userEventsConsumer           *infrakafka.ExternalConsumer
-	compactedTopicLoader         *infrakafka.CompactedTopicLoader
+	batchedCampaignRunConsumer     *infrakafka.TransactionalConsumer
+	batchedSourceFanoutConsumer    *infrakafka.TransactionalConsumer
+	inlineCampaignRunConsumer      *infrakafka.TransactionalConsumer
+	inlineCampaignFanoutConsumer   *infrakafka.TransactionalConsumer
+	campaignProgressConsumer       *infrakafka.TransactionalConsumer
+	campaignStatsConsumer          *infrakafka.Consumer
+	notificationProjectionConsumer *infrakafka.Consumer
+	userEventsConsumer             *infrakafka.ExternalConsumer
+	compactedTopicLoader           *infrakafka.CompactedTopicLoader
 }
 
 func NewAdapters(config Config) (*Adapters, error) {
@@ -80,6 +87,17 @@ func NewAdapters(config Config) (*Adapters, error) {
 	defer func() {
 		if cleanup {
 			pool.Close()
+		}
+	}()
+	cassandraCluster := gocql.NewCluster(config.CassandraHosts...)
+	cassandraCluster.Keyspace = config.CassandraKeyspace
+	cassandraSession, err := cassandraCluster.CreateSession()
+	if err != nil {
+		return nil, fmt.Errorf("create Cassandra session: %w", err)
+	}
+	defer func() {
+		if cleanup {
+			cassandraSession.Close()
 		}
 	}()
 
@@ -196,6 +214,17 @@ func NewAdapters(config Config) (*Adapters, error) {
 			campaignStatsConsumer.Close()
 		}
 	}()
+	notificationProjectionConsumer, err := infrakafka.NewConsumer(infrakafka.ConsumerParams{
+		Brokers: config.KafkaBrokers, ConsumerGroup: notificationProjectionConsumerGroup, InputTopic: contracts.TopicNotificationAccepted,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create notification projection Kafka consumer: %w", err)
+	}
+	defer func() {
+		if cleanup {
+			notificationProjectionConsumer.Close()
+		}
+	}()
 	userEventsConsumer, err := infrakafka.NewExternalConsumer(infrakafka.ExternalConsumerParams{
 		Brokers:       config.KafkaBrokers,
 		ConsumerGroup: userEventsConsumerGroup,
@@ -260,6 +289,7 @@ func NewAdapters(config Config) (*Adapters, error) {
 		Tenants:            repo.NewTenantRepository(queries),
 		TenantAPIKeys:      tenantAPIKeys,
 		Users:              repo.NewUserRepository(queries),
+		Notifications:      cassandrarepo.NewNotificationRepository(cassandraSession, config.NotificationWriteMaxInFlight),
 		Transactions:       repo.NewTransactionManager(pool),
 
 		CampaignReads:          readrepo.NewCampaignRepository(readQueries),
@@ -267,6 +297,7 @@ func NewAdapters(config Config) (*Adapters, error) {
 		ChannelReads:           readrepo.NewChannelRepository(readQueries),
 		MobileApplicationReads: readrepo.NewMobileApplicationRepository(readQueries),
 		ProviderReads:          readrepo.NewProviderRepository(readQueries),
+		NotificationReads:      cassandrareadrepo.NewNotificationRepository(cassandraSession),
 
 		CredentialsCipher:     cipher,
 		TenantAPIKeyHasher:    apiKeyHasher,
@@ -277,18 +308,20 @@ func NewAdapters(config Config) (*Adapters, error) {
 		PushCallSemaphore:     callSemaphore,
 		topicProvisioner:      topicProvisioner,
 
-		pool:        pool,
-		redisClient: redis,
-		producer:    producer,
+		pool:             pool,
+		redisClient:      redis,
+		cassandraSession: cassandraSession,
+		producer:         producer,
 
-		batchedCampaignRunConsumer:   batchedCampaignRunConsumer,
-		batchedSourceFanoutConsumer:  batchedSourceFanoutConsumer,
-		inlineCampaignRunConsumer:    inlineCampaignRunConsumer,
-		inlineCampaignFanoutConsumer: inlineCampaignFanoutConsumer,
-		campaignProgressConsumer:     campaignProgressConsumer,
-		campaignStatsConsumer:        campaignStatsConsumer,
-		userEventsConsumer:           userEventsConsumer,
-		compactedTopicLoader:         compactedTopicLoader,
+		batchedCampaignRunConsumer:     batchedCampaignRunConsumer,
+		batchedSourceFanoutConsumer:    batchedSourceFanoutConsumer,
+		inlineCampaignRunConsumer:      inlineCampaignRunConsumer,
+		inlineCampaignFanoutConsumer:   inlineCampaignFanoutConsumer,
+		campaignProgressConsumer:       campaignProgressConsumer,
+		campaignStatsConsumer:          campaignStatsConsumer,
+		notificationProjectionConsumer: notificationProjectionConsumer,
+		userEventsConsumer:             userEventsConsumer,
+		compactedTopicLoader:           compactedTopicLoader,
 	}, nil
 }
 
@@ -322,10 +355,12 @@ func (a *Adapters) Close() {
 	a.inlineCampaignFanoutConsumer.Close()
 	a.campaignProgressConsumer.Close()
 	a.campaignStatsConsumer.Close()
+	a.notificationProjectionConsumer.Close()
 	a.userEventsConsumer.Close()
 	a.producer.Close()
 	a.topicProvisioner.Close()
 	a.redisClient.Close()
+	a.cassandraSession.Close()
 	a.pool.Close()
 }
 

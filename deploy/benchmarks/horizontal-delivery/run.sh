@@ -8,6 +8,7 @@ inventory="$benchmark_dir/ansible/inventory.py"
 results_dir="$benchmark_dir/results"
 state_dir="$benchmark_dir/.state"
 monitor="$benchmark_dir/scripts/monitor.sh"
+topic_lag="$benchmark_dir/scripts/topic-lag.sh"
 scenario="${1:-batched-ten}"
 scenario_dir="$benchmark_dir/ansible/scenarios/$scenario"
 
@@ -107,6 +108,13 @@ FAKE_FCM_PRIVATE_IP="$fake_fcm_private_ip" \
 BENCHMARK_RESULTS_DIR="$run_results_dir" \
 "$scenario_dir/wait.sh"
 
+echo "==> Collecting final Kafka topic lag"
+bash "$topic_lag" \
+  --host "$infrastructure_ip" \
+  --compose-file /opt/pushkin-benchmark/infrastructure.compose.yml \
+  --output "$run_results_dir/topic-lags.json"
+cat "$run_results_dir/topic-lags.json"
+
 stop_monitor
 trap - EXIT
 
@@ -128,8 +136,9 @@ jq -n \
   --arg completed_at "$completed_at" \
   --argjson duration_seconds "$duration_seconds" \
   --slurpfile fake_fcm "$run_results_dir/fake-fcm.json" \
+  --slurpfile topic_lags "$run_results_dir/topic-lags.json" \
   --slurpfile metrics "$metrics_summary" \
-  '{scenario: $scenario, revision: $revision, started_at: $started_at, completed_at: $completed_at, duration_seconds: $duration_seconds, fake_fcm: $fake_fcm[0], metrics: $metrics[0]}' \
+  '{scenario: $scenario, revision: $revision, started_at: $started_at, completed_at: $completed_at, duration_seconds: $duration_seconds, fake_fcm: $fake_fcm[0], topic_lags: $topic_lags[0], metrics: $metrics[0]}' \
   >"$run_results_dir/summary.json"
 
 echo "==> Complete: $run_results_dir/summary.json"

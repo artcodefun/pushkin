@@ -23,6 +23,30 @@ services:
       retries: 20
     volumes: [redis_data:/data]
 
+  cassandra:
+    image: cassandra:5.0
+    environment:
+      CASSANDRA_CLUSTER_NAME: pushkin-benchmark
+      CASSANDRA_NUM_TOKENS: 1
+      MAX_HEAP_SIZE: 2G
+      HEAP_NEWSIZE: 512M
+    healthcheck:
+      test: [CMD-SHELL, "cqlsh -e 'DESCRIBE KEYSPACES' localhost 9042 >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    volumes: [cassandra_data:/var/lib/cassandra]
+
+  migrate-cassandra:
+    image: cassandra:5.0
+    command: [bash, /migrations/migrate.sh]
+    environment:
+      PUSHKIN_CASSANDRA_KEYSPACE: pushkin_inbox
+    depends_on:
+      cassandra: { condition: service_healthy }
+    volumes:
+      - {{ benchmark_root }}/source/internal/infrastructure/cassandra/migrations:/migrations:ro
+
   volume-init:
     image: apache/kafka:4.3.1
     user: "0:0"
@@ -71,12 +95,16 @@ services:
       kafka: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      cassandra: { condition: service_healthy }
+      migrate-cassandra: { condition: service_completed_successfully }
     environment:
       PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
       PUSHKIN_MIGRATIONS_TABLE: pushkin_schema_migrations
       PUSHKIN_HTTP_ADDRESS: :8080
       PUSHKIN_KAFKA_BROKERS: kafka:19092
       PUSHKIN_REDIS_ADDRESS: redis:6379
+      PUSHKIN_CASSANDRA_HOSTS: cassandra:9042
+      PUSHKIN_CASSANDRA_KEYSPACE: pushkin_inbox
       PUSHKIN_INSTANCE_ID: pushkin-benchmark-single
       PUSHKIN_API_KEY_HASH_PEPPER: {{ hostvars['localhost'].benchmark_api_key_pepper }}
       PUSHKIN_ADMIN_MASTER_KEY: {{ hostvars['localhost'].benchmark_admin_key }}
@@ -87,6 +115,8 @@ services:
       PUSHKIN_DELIVERY_MAX_IN_FLIGHT: "5000"
       PUSHKIN_CAMPAIGN_PROGRESS_BATCH_SIZE: "2000"
       PUSHKIN_CAMPAIGN_STATS_BATCH_SIZE: "2000"
+      PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE: "1000"
+      PUSHKIN_NOTIFICATION_WRITE_MAX_IN_FLIGHT: "500"
       PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE: "5000"
       PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE: "2500"
       PUSHKIN_PROVIDER_DEFAULT_RATE_LIMIT_QPS: "100000"
@@ -96,4 +126,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  cassandra_data:
   kafka_data:

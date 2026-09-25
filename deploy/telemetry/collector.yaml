@@ -13,6 +13,9 @@ receivers:
         - job_name: kafka
           static_configs:
             - targets: [kafka-exporter:9308]
+        - job_name: cassandra
+          static_configs:
+            - targets: [cassandra:9404]
 
 processors:
   batch:

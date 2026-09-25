@@ -96,3 +96,11 @@ type ProviderRepository interface {
 	Create(ctx context.Context, provider *domain.Provider) error
 	FindByID(ctx context.Context, id domain.ProviderID) (*domain.Provider, error)
 }
+
+// NotificationRepository persists provider-accepted logical notifications.
+// SaveAcceptedBatch must be idempotent by notification ID because Kafka
+// delivery is at-least-once and a user can have multiple installations.
+type NotificationRepository interface {
+	SaveAcceptedBatch(ctx context.Context, notifications []domain.Notification) error
+	MarkRead(ctx context.Context, tenantID domain.TenantID, userID domain.UserID, notificationID domain.NotificationID, readAt time.Time) error
+}

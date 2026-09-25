@@ -29,7 +29,10 @@ func TestBatchedSourceBatchFanoutServiceProcessPublishesDeliveryWorkAndCompletio
 	}}
 	mobileApplicationIDs := []domain.MobileApplicationID{uuid.NewV7(), uuid.NewV7()}
 	applications := &mobileApplicationRepositoryFake{mobileApplicationIDs: mobileApplicationIDs}
-	installations := &pushInstallationRepositoryFake{installationIDs: installationIDs}
+	installations := &pushInstallationRepositoryFake{installationIDsByUser: map[domain.UserID][]domain.PushInstallationID{
+		"user-1": installationIDs[:2],
+		"user-2": installationIDs[2:],
+	}}
 	service := NewBatchedSourceBatchFanoutService(BatchedSourceBatchFanoutServiceParams{
 		CampaignRepository:          &campaignRepositoryFake{campaign: campaign},
 		SourceBatchRepository:       &batchedSourceBatchRepositoryFake{batch: batch},
@@ -67,7 +70,8 @@ func TestBatchedSourceBatchFanoutServiceProcessPublishesDeliveryWorkAndCompletio
 			t.Fatalf("delivery %d has type %T", index, message.Value)
 		}
 		if work.DeliveryID == uuid.Nil() || work.CampaignID != campaign.ID() ||
-			work.PushInstallationID != installationIDs[index] || work.Priority != string(campaign.Priority()) {
+			work.PushInstallationID != installationIDs[index] || work.NotificationID == (uuid.UUID{}) || work.UserID == "" ||
+			work.NotificationCreatedAt.IsZero() || work.Priority != string(campaign.Priority()) {
 			t.Fatalf("unexpected delivery work: %+v", work)
 		}
 	}
@@ -184,6 +188,7 @@ type pushInstallationRepositoryFake struct {
 	tenantID               domain.TenantID
 	mobileApplicationIDs   []domain.MobileApplicationID
 	installationIDs        []domain.PushInstallationID
+	installationIDsByUser  map[domain.UserID][]domain.PushInstallationID
 	listActiveMatchesCalls int
 }
 
@@ -221,10 +226,16 @@ func (r *pushInstallationRepositoryFake) ListActiveIDs(
 	return append([]domain.PushInstallationID(nil), r.installationIDs...), nil
 }
 
-func (r *pushInstallationRepositoryFake) ListActiveIDsByUsers(_ context.Context, _ domain.TenantID, userIDs []domain.UserID, _ []domain.MobileApplicationID) (map[domain.UserID][]domain.PushInstallationID, error) {
+func (r *pushInstallationRepositoryFake) ListActiveIDsByUsers(_ context.Context, tenantID domain.TenantID, userIDs []domain.UserID, mobileApplicationIDs []domain.MobileApplicationID) (map[domain.UserID][]domain.PushInstallationID, error) {
+	r.tenantID = tenantID
+	r.mobileApplicationIDs = append([]domain.MobileApplicationID(nil), mobileApplicationIDs...)
 	r.listActiveMatchesCalls++
 	result := make(map[domain.UserID][]domain.PushInstallationID, len(userIDs))
 	for _, userID := range userIDs {
+		if r.installationIDsByUser != nil {
+			result[userID] = append([]domain.PushInstallationID(nil), r.installationIDsByUser[userID]...)
+			continue
+		}
 		result[userID] = append([]domain.PushInstallationID(nil), r.installationIDs...)
 	}
 	return result, nil

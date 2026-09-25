@@ -153,6 +153,16 @@ summarize() {
         "host";
         ["consumer_group_count", "total_consumer_lag", "maximum_partition_lag"]
       ),
+      cassandra: grouped_statistics(
+        [ .[] | select(.cassandra != null) | {
+            host: .host,
+            live_nodes: .cassandra.live_nodes,
+            storage_load_bytes: .cassandra.storage_load_bytes,
+            heap_used_bytes: .cassandra.heap_used_bytes
+          } ];
+        "host";
+        ["live_nodes", "storage_load_bytes", "heap_used_bytes"]
+      ),
       collection_errors: [ .[] | select(.error != null) | {timestamp, host, error} ]
     }
   ' "$output" >"$summary"
@@ -215,6 +225,7 @@ containers+=']'
 postgres='null'
 redis='null'
 kafka='null'
+cassandra='null'
 
 if [[ "$collect_components" == true ]]; then
   postgres_container="$(docker ps --filter label=com.docker.compose.service=postgres --format '{{.ID}}' | head -n 1)"
@@ -255,14 +266,40 @@ if [[ "$collect_components" == true ]]; then
           }
         ' || printf 'null')"
   fi
+
+  cassandra_container="$(docker ps --filter label=com.docker.compose.service=cassandra --format '{{.ID}}' | head -n 1)"
+  if [[ -n "$cassandra_container" ]]; then
+    cassandra_info="$(docker exec "$cassandra_container" nodetool info 2>/dev/null || true)"
+    cassandra_status="$(docker exec "$cassandra_container" nodetool status 2>/dev/null || true)"
+    cassandra_live_nodes="$(awk '$1 == "UN" { count++ } END { print count + 0 }' <<<"$cassandra_status")"
+    cassandra_storage_load_bytes="$(awk -F': ' '
+      /^Load[[:space:]]*:/ {
+        split($2, parts, " ")
+        multiplier = 1
+        if (parts[2] == "KiB" || parts[2] == "KB") multiplier = 1024
+        else if (parts[2] == "MiB" || parts[2] == "MB") multiplier = 1024 * 1024
+        else if (parts[2] == "GiB" || parts[2] == "GB") multiplier = 1024 * 1024 * 1024
+        printf "%.0f", parts[1] * multiplier
+        exit
+      }
+    ' <<<"$cassandra_info")"
+    cassandra_heap_used_bytes="$(awk -F': ' '
+      /^Heap Memory \(MB\)[[:space:]]*:/ {
+        split($2, parts, " ")
+        printf "%.0f", parts[1] * 1024 * 1024
+        exit
+      }
+    ' <<<"$cassandra_info")"
+    cassandra="{\"live_nodes\":$(numeric_or_null "$cassandra_live_nodes"),\"storage_load_bytes\":$(numeric_or_null "$cassandra_storage_load_bytes"),\"heap_used_bytes\":$(numeric_or_null "$cassandra_heap_used_bytes")}"
+  fi
 fi
 
-printf '"host_metrics":{"cpu_percent":%s,"memory_total_bytes":%s,"memory_available_bytes":%s,"load_1":%s},"containers":%s,"postgres":%s,"redis":%s,"kafka":%s' \
+printf '"host_metrics":{"cpu_percent":%s,"memory_total_bytes":%s,"memory_available_bytes":%s,"load_1":%s},"containers":%s,"postgres":%s,"redis":%s,"kafka":%s,"cassandra":%s' \
   "$(numeric_or_null "$host_cpu_percent")" \
   "$(numeric_or_null "$host_memory_total_bytes")" \
   "$(numeric_or_null "$host_memory_available_bytes")" \
   "$(numeric_or_null "$host_load_1")" \
-  "$containers" "$postgres" "$redis" "$kafka"
+  "$containers" "$postgres" "$redis" "$kafka" "$cassandra"
 REMOTE
 )"; then
     jq -cn --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg host "$name" --arg error "SSH collection failed for $address" \

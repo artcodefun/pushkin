@@ -40,7 +40,7 @@ resource "yandex_vpc_security_group" "infrastructure" {
 
   ingress {
     protocol       = "TCP"
-    description    = "PostgreSQL, Redis, and Kafka from benchmark VMs"
+    description    = "PostgreSQL, Cassandra, Redis, and Kafka from benchmark VMs"
     v4_cidr_blocks = yandex_vpc_subnet.benchmark.v4_cidr_blocks
     from_port      = 5432
     to_port        = 9092

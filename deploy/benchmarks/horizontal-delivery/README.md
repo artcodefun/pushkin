@@ -2,7 +2,7 @@
 
 This experiment compares a single Pushkin instance with a group of four
 instances sharing Kafka consumer groups. One infrastructure VM runs PostgreSQL,
-Redis, Kafka and migrations. Four Pushkin VMs run one service process each. A
+Cassandra, Redis, Kafka and migrations. Four Pushkin VMs run one service process each. A
 separate VM runs Fake FCM.
 
 Kafka topics use four partitions in the application. This matches the four
@@ -42,8 +42,10 @@ Fake FCM progress, and saves a timestamped summary under `results/`. While the
 workload runs, an internal monitor polls every VM through SSH. Each result
 directory therefore also contains `metrics.ndjson` with raw samples and
 `metrics-summary.json` with average and maximum host, container, PostgreSQL,
-Redis, and Kafka consumer-lag metrics. Collection failures are reported in the
-summary without aborting the workload.
+Cassandra, Redis, and Kafka consumer-lag metrics. Collection failures are reported in the
+summary without aborting the workload. It also records final lag for
+`pushkin.campaign.progress` and `pushkin.notification.accepted` after Fake FCM
+finishes.
 
 ```bash
 cd deploy/benchmarks/horizontal-delivery
@@ -63,7 +65,7 @@ stacks and their volumes. Results and Terraform resources are preserved:
 ./run.sh batched-ten
 ```
 
-`reset.sh` removes PostgreSQL, Redis, and Kafka data from the infrastructure
+`reset.sh` removes PostgreSQL, Cassandra, Redis, and Kafka data from the infrastructure
 VM, stops all Pushkin instances, resets Fake FCM counters, and deletes only the
 local dataset marker. It does not delete the VMs, network, benchmark secrets,
 or prior result files.

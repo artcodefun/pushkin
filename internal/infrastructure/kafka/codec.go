@@ -52,6 +52,8 @@ func DecodeMessage(data []byte) (contracts.MessageV1, error) {
 		return decodePayload[contracts.CampaignProgressDeltaV1](envelope.Payload)
 	case contracts.MessageTypeCampaignStatsSnapshotV1:
 		return decodePayload[contracts.CampaignStatsSnapshotV1](envelope.Payload)
+	case contracts.MessageTypeNotificationAcceptedV1:
+		return decodePayload[contracts.NotificationAcceptedV1](envelope.Payload)
 	default:
 		return nil, fmt.Errorf("unsupported Kafka message type %q", envelope.Type)
 	}

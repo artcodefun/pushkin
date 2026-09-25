@@ -1,0 +1,31 @@
+startDelaySeconds: 0
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+
+# A deliberately small set: table metrics include a table label and would grow
+# with every tenant/application schema addition. Add them only when a concrete
+# diagnostic use case requires them.
+includeObjectNames:
+  - java.lang:type=Memory
+  - java.lang:type=OperatingSystem
+  - java.lang:type=GarbageCollector,*
+  - org.apache.cassandra.metrics:type=ClientRequest,*
+  - org.apache.cassandra.metrics:type=Compaction,*
+  - org.apache.cassandra.metrics:type=Storage,*
+  - org.apache.cassandra.metrics:type=ThreadPools,*
+
+rules:
+  - pattern: 'org.apache.cassandra.metrics<type=ClientRequest, scope=(Read|Write), name=(Latency|Timeouts|Unavailables)><>(Count|Value)'
+    name: cassandra_client_request_$2_$3
+    type: COUNTER
+    labels:
+      operation: '$1'
+  - pattern: 'org.apache.cassandra.metrics<type=Compaction, name=(.+)><>(Count|Value)'
+    name: cassandra_compaction_$1
+  - pattern: 'org.apache.cassandra.metrics<type=Storage, name=(.+)><>(Count|Value)'
+    name: cassandra_storage_$1
+  - pattern: 'org.apache.cassandra.metrics<type=ThreadPools, path=(.+), scope=(.+), name=(.+)><>(Count|Value)'
+    name: cassandra_thread_pools_$3
+    labels:
+      path: '$1'
+      pool: '$2'

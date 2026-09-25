@@ -24,6 +24,10 @@ e-mail, Web Push и другие каналы как новые delivery adapter
 - Массовые кампании с импортом готового списка `user_id` через REST.
 - Черновик, импорт аудитории, запуск, планирование, ретраи через time buckets
   `1m`/`5m`/`30m` и базовые агрегированные отчёты.
+- User notification inbox: Cassandra хранит одно логическое принятое
+  уведомление на пользователя; tenant читает inbox по `user_id` с cursor
+  pagination и идемпотентно отмечает его прочитанным. Основная inbox-запись
+  неизменяема; read receipt хранится отдельно. Обе записи имеют TTL 90 дней.
 - Приоритеты `critical`, `high`, `normal`.
 
 Не включено:
@@ -224,6 +228,8 @@ POST /api/v1/campaigns/{campaign_id}/recipients:batch
 POST /api/v1/campaigns/{campaign_id}/start
 GET  /api/v1/campaigns/{campaign_id}
 POST /api/v1/push-installations:register
+GET  /api/v1/users/{user_id}/notifications
+POST /api/v1/users/{user_id}/notifications/{notification_id}/read
 ```
 
 В v1 общая идемпотентность REST-запросов не реализуется. Интегратор не должен
@@ -573,6 +579,8 @@ values. Начальные значения предназначены для б
 | `PUSHKIN_CAMPAIGN_STATS_BATCH_SIZE` | `1000` | Максимум snapshots за один projection run. |
 | `PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE` | `100` | Максимум inline run records за один coordinator run. |
 | `PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE` | `100` | Максимум inline fanout records за одну Kafka transaction. |
+| `PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE` | `100` | Максимум accepted notification records за один projection run. |
+| `PUSHKIN_NOTIFICATION_WRITE_MAX_IN_FLIGHT` | `50` | Максимум параллельных Cassandra inserts в одном notification projection run. |
 | `PUSHKIN_CHANNEL_PROVISIONING_INTERVAL` | `1s` | Частота reconcile runnable Channel и локальных channel workers на pod. |
 | `PUSHKIN_CREDENTIALS_CIPHER_KEY_BASE64` | — | Обязательный AES-256-GCM ключ в base64; хранится вне PostgreSQL. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Необязательный OTLP gRPC endpoint для metrics export. Без него telemetry no-op. |
@@ -726,8 +734,8 @@ delivery, но не отзывает уже начатые или приняты
 
 Metrics-only observability уже доступна как необязательный OTLP export.
 Локальный Compose overlay содержит Collector, Grafana LGTM и exporters для
-PostgreSQL, Redis и Kafka. Production dashboards, alert rules, logs, traces и
-SLO остаются отдельной работой; Grafana Cloud не является обязательной
+PostgreSQL, Redis, Kafka и Cassandra. Production dashboards, alert rules, logs,
+traces и SLO остаются отдельной работой; Grafana Cloud не является обязательной
 зависимостью.
 
 Текущий topic-per-Channel подход рассчитан на ограниченное число активных
@@ -759,14 +767,6 @@ priority scheduler: он должен выбирать delivery work `critical �
 ключа, hash запроса и scalar result должна сохраняться в одной PostgreSQL
 transaction с изменяемыми моделями; один ключ с другим запросом даёт conflict.
 
-Пользовательский notification inbox: добавить отдельный application port с
-двумя взаимозаменяемыми адаптерами — PostgreSQL (отдельная append-only таблица
-с retention/партиционированием) и Cassandra/совместимый wide-column store.
-Выбор реализации конфигурируется как `disabled`, `postgres` или `cassandra`;
-inbox не является обязательной зависимостью Pushkin. В обоих вариантах хранится
-одно логическое принятое уведомление на пользователя, а не delivery attempt на
-устройство; основной запрос — newest-first с cursor pagination. Нужно определить
-user-facing API и модель авторизации, момент создания записи после provider
-acceptance, `notification_id` для дедупликации, TTL/правила удаления и отдельный
-Kafka projection consumer. Будущая техническая аналитика delivery attempts не
-заменяет inbox.
+PostgreSQL adapter notification inbox: Cassandra является v1 storage. Позднее
+можно добавить PostgreSQL adapter с отдельной append-only таблицей и retention,
+не меняя application port или HTTP contract.

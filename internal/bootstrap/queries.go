@@ -12,6 +12,7 @@ type Queries struct {
 	Channel           application.ChannelQueries
 	MobileApplication application.MobileApplicationQueries
 	Provider          application.ProviderQueries
+	Notification      application.NotificationQueries
 }
 
 func NewQueries(adapters *Adapters) *Queries {
@@ -21,5 +22,6 @@ func NewQueries(adapters *Adapters) *Queries {
 		Channel:           queries.NewChannelQueries(adapters.ChannelReads),
 		MobileApplication: queries.NewMobileApplicationQueries(adapters.MobileApplicationReads),
 		Provider:          queries.NewProviderQueries(adapters.ProviderReads),
+		Notification:      queries.NewNotificationQueries(adapters.NotificationReads),
 	}
 }

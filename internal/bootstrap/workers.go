@@ -28,6 +28,7 @@ const (
 	inlineCampaignFanoutConsumerGroup     = "pushkin.campaign-inline-fanout"
 	campaignProgressConsumerGroup         = "pushkin.campaign-progress"
 	campaignStatsConsumerGroup            = "pushkin.campaign-stats"
+	notificationProjectionConsumerGroup   = "pushkin.notification-projection"
 	userEventsConsumerGroup               = "pushkin.user-events"
 	batchedCampaignRunTransactionalRole   = "campaign-batched-run"
 	batchedSourceFanoutTransactionalRole  = "campaign-batched-source-batch-fanout"
@@ -101,6 +102,12 @@ func NewWorkers(adapters *Adapters, commands *Commands, servicesBundle *Services
 			name: "campaign stats projection",
 			run: func(ctx context.Context) error {
 				return runCampaignStatsProjection(ctx, servicesBundle.CampaignStatsProjection)
+			},
+		},
+		{
+			name: "notification projection",
+			run: func(ctx context.Context) error {
+				return runNotificationProjection(ctx, servicesBundle.NotificationProjection)
 			},
 		},
 		{
@@ -335,6 +342,15 @@ func runCampaignProgressAggregator(
 }
 
 func runCampaignStatsProjection(ctx context.Context, service *services.CampaignStatsProjectionService) error {
+	for ctx.Err() == nil {
+		if err := service.Process(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func runNotificationProjection(ctx context.Context, service *services.NotificationProjectionService) error {
 	for ctx.Err() == nil {
 		if err := service.Process(ctx); err != nil {
 			return err

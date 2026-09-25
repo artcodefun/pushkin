@@ -171,6 +171,17 @@ type RegisterPushInstallationCommand struct {
 	Token          string
 }
 
+// NotificationCommands mutates tenant-scoped notification state.
+type NotificationCommands interface {
+	MarkNotificationRead(ctx context.Context, command MarkNotificationReadCommand) error
+}
+
+type MarkNotificationReadCommand struct {
+	TenantID       domain.TenantID
+	UserID         domain.UserID
+	NotificationID domain.NotificationID
+}
+
 // ChannelCommands defines channel configuration and application link mutations.
 type ChannelCommands interface {
 	CreateChannel(ctx context.Context, command CreateChannelCommand) (CreateChannelResult, error)

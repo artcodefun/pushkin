@@ -41,6 +41,15 @@ services:
       kafka:
         condition: service_healthy
 
+  cassandra:
+    build:
+      context: ./deploy/telemetry/cassandra
+    image: pushkin-cassandra:telemetry
+    environment:
+      JVM_EXTRA_OPTS: -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
+    expose:
+      - "9404"
+
   server:
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: telemetry:4317

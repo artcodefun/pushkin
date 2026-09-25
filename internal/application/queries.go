@@ -29,3 +29,7 @@ type MobileApplicationQueries interface {
 	GetMobileApplication(ctx context.Context, tenantID domain.TenantID, mobileApplicationID domain.MobileApplicationID) (*readmodels.MobileApplication, error)
 	ListMobileApplications(ctx context.Context, tenantID domain.TenantID) ([]readmodels.MobileApplication, error)
 }
+
+type NotificationQueries interface {
+	ListNotifications(ctx context.Context, tenantID domain.TenantID, userID domain.UserID, cursor string, limit int) (readmodels.NotificationPage, error)
+}

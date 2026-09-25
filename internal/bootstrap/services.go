@@ -38,6 +38,7 @@ type Services struct {
 	InlineCampaignFanout          *services.InlineCampaignFanoutService
 	CampaignProgressAggregator    *services.CampaignProgressAggregatorService
 	CampaignStatsProjection       *services.CampaignStatsProjectionService
+	NotificationProjection        *services.NotificationProjectionService
 	NewDeliveryService            DeliveryServiceFactory
 	NewRetryDeliveryService       RetryDeliveryServiceFactory
 }
@@ -91,6 +92,11 @@ func NewServices(adapters *Adapters, config Config) *Services {
 			KafkaConsumer:        adapters.campaignProgressConsumer,
 			CompactedTopicLoader: adapters.compactedTopicLoader,
 			BatchSize:            config.CampaignProgressBatchSize,
+		}),
+		NotificationProjection: services.NewNotificationProjectionService(services.NotificationProjectionServiceParams{
+			Notifications: adapters.Notifications,
+			KafkaConsumer: adapters.notificationProjectionConsumer,
+			BatchSize:     config.NotificationProjectionBatchSize,
 		}),
 		NewDeliveryService: func(params DeliveryServiceFactoryParams) (*services.DeliveryService, error) {
 			return services.NewDeliveryService(services.DeliveryServiceParams{

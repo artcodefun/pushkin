@@ -23,6 +23,31 @@ services:
     volumes:
       - redis_data:/data
 
+  cassandra:
+    image: cassandra:5.0
+    environment:
+      CASSANDRA_CLUSTER_NAME: pushkin
+      CASSANDRA_NUM_TOKENS: 1
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' localhost 9042 >/dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+
+  migrate-cassandra:
+    image: cassandra:5.0
+    command: ["bash", "/migrations/migrate.sh"]
+    restart: "no"
+    environment:
+      PUSHKIN_CASSANDRA_KEYSPACE: pushkin_inbox
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    volumes:
+      - ./internal/infrastructure/cassandra/migrations:/migrations:ro
+
   volume-init:
     image: apache/kafka:4.3.1
     user: "0:0"
@@ -99,6 +124,8 @@ services:
       PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@postgres:5432/pushkin?sslmode=disable
       PUSHKIN_KAFKA_BROKERS: kafka:19092
       PUSHKIN_REDIS_ADDRESS: redis:6379
+      PUSHKIN_CASSANDRA_HOSTS: cassandra:9042
+      PUSHKIN_CASSANDRA_KEYSPACE: pushkin_inbox
       PUSHKIN_INSTANCE_ID: pushkin-compose
       PUSHKIN_USE_TEST_SENDER: "true"
       PUSHKIN_TEST_SENDER_URL: http://fake-fcm:8081
@@ -111,6 +138,10 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      cassandra:
+        condition: service_healthy
+      migrate-cassandra:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
 
@@ -118,3 +149,4 @@ volumes:
   kafka_data:
   postgres_data:
   redis_data:
+  cassandra_data:

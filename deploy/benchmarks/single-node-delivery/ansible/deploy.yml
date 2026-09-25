@@ -23,11 +23,14 @@
           - tar
           - --exclude=.git
           - --exclude=./deploy
+          - --exclude=._*
           - --create
           - --gzip
           - --file={{ benchmark_source_archive }}
           - --directory={{ source_dir }}
           - .
+      environment:
+        COPYFILE_DISABLE: "1"
       changed_when: true
 
 - name: Install Docker and build Pushkin on both benchmark VMs

@@ -17,6 +17,7 @@ type PushInstallationID = uuid.UUID
 type CampaignID = uuid.UUID
 type SourceBatchID = uuid.UUID
 type DeliveryID = uuid.UUID
+type NotificationID = uuid.UUID
 type RunID = uuid.UUID
 
 // UserID belongs to the tenant's user service and intentionally remains a

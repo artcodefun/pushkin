@@ -185,6 +185,7 @@ func (s *DeliveryService) validateWorks(records []ports.KafkaRecord) ([]contract
 			return nil, fmt.Errorf("delivery work message %T: %w", record.Value, application.ErrValidation)
 		}
 		if work.DeliveryID == (uuid.UUID{}) || work.CampaignID == (uuid.UUID{}) || work.TenantID == (uuid.UUID{}) ||
+			work.NotificationID == (uuid.UUID{}) || work.UserID == "" || work.NotificationCreatedAt.IsZero() ||
 			work.ChannelID == (uuid.UUID{}) || work.PushInstallationID == (uuid.UUID{}) ||
 			work.RetryAttempt > domain.MaxDeliveryRetryAttempts {
 			return nil, fmt.Errorf("delivery work: %w", application.ErrValidation)
@@ -275,6 +276,7 @@ func (s *DeliveryService) resultMessages(ctx context.Context, works []contracts.
 	}
 	accepted := make(map[uuid.UUID]uint64)
 	failed := make(map[uuid.UUID]uint64)
+	notificationIDs := make(map[uuid.UUID]struct{})
 	messages := make([]ports.OutboundKafkaMessage, 0, len(works))
 	for _, work := range works {
 		if _, found := prepared.failed[work.DeliveryID]; found {
@@ -285,6 +287,14 @@ func (s *DeliveryService) resultMessages(ctx context.Context, works []contracts.
 		switch delivery.result.Outcome {
 		case ports.PushSendOutcomeAccepted:
 			accepted[work.CampaignID]++
+			if _, emitted := notificationIDs[work.NotificationID]; !emitted {
+				notificationMessage, err := acceptedNotificationMessage(work, delivery.payload)
+				if err != nil {
+					return nil, err
+				}
+				messages = append(messages, notificationMessage)
+				notificationIDs[work.NotificationID] = struct{}{}
+			}
 		case ports.PushSendOutcomeInvalidToken:
 			if err := s.installations.Deactivate(ctx, work.TenantID, work.PushInstallationID); err != nil {
 				return nil, err
@@ -307,6 +317,21 @@ func (s *DeliveryService) resultMessages(ctx context.Context, works []contracts.
 		messages = append(messages, ports.OutboundKafkaMessage{Topic: contracts.TopicCampaignProgress, Key: []byte(campaignID.String()), Value: contracts.CampaignProgressDeltaV1{MessageHeaderV1: contracts.NewMessageHeaderV1(), Type: contracts.CampaignProgressEventTypeDeliveryDelta, CampaignID: campaignID, DeliveryAcceptedDelta: accepted[campaignID], DeliveryFailedDelta: failed[campaignID]}})
 	}
 	return messages, nil
+}
+
+func acceptedNotificationMessage(work contracts.DeliveryWorkV1, payload domain.PushPayload) (ports.OutboundKafkaMessage, error) {
+	notification, err := domain.HydrateNotification(domain.HydrateNotificationParams{
+		ID: work.NotificationID, CampaignID: work.CampaignID, TenantID: work.TenantID,
+		UserID: domain.UserID(work.UserID), CreatedAt: work.NotificationCreatedAt, Payload: payload,
+	})
+	if err != nil {
+		return ports.OutboundKafkaMessage{}, fmt.Errorf("hydrate notification: %w", err)
+	}
+	return ports.OutboundKafkaMessage{
+		Topic: contracts.TopicNotificationAccepted,
+		Key:   []byte(work.TenantID.String() + ":" + work.UserID),
+		Value: contracts.NewNotificationAcceptedV1(notification),
+	}, nil
 }
 
 func retryMessage(work contracts.DeliveryWorkV1, result ports.PushSendResult, now time.Time) (ports.OutboundKafkaMessage, error) {

@@ -12,6 +12,7 @@ type Commands struct {
 	MobileApplication application.MobileApplicationCommands
 	Provider          application.ProviderCommands
 	PushInstallation  application.PushInstallationCommands
+	Notification      application.NotificationCommands
 	Tenant            application.TenantCommands
 	TenantAPIKey      application.TenantAPIKeyCommands
 	User              application.UserCommands
@@ -45,7 +46,8 @@ func NewCommands(adapters *Adapters, config Config) *Commands {
 			MobileApplicationRepository: adapters.MobileApplications,
 			PushInstallationRepository:  adapters.PushInstallations,
 		}),
-		Tenant: commands.NewTenantCommands(commands.TenantCommandsParams{TenantRepository: adapters.Tenants}),
+		Notification: commands.NewNotificationCommands(adapters.Notifications),
+		Tenant:       commands.NewTenantCommands(commands.TenantCommandsParams{TenantRepository: adapters.Tenants}),
 		TenantAPIKey: commands.NewTenantAPIKeyCommands(commands.TenantAPIKeyCommandsParams{
 			TenantRepository:       adapters.Tenants,
 			TenantAPIKeyRepository: adapters.TenantAPIKeys,

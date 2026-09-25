@@ -13,6 +13,8 @@ func TestLoadConfigUsesDefaults(t *testing.T) {
 		"PUSHKIN_KAFKA_BROKERS":                 "kafka-1:9092, kafka-2:9092",
 		"PUSHKIN_INSTANCE_ID":                   "test-instance",
 		"PUSHKIN_REDIS_ADDRESS":                 "redis:6379",
+		"PUSHKIN_CASSANDRA_HOSTS":               "cassandra:9042",
+		"PUSHKIN_CASSANDRA_KEYSPACE":            "pushkin_inbox",
 		"PUSHKIN_CREDENTIALS_CIPHER_KEY_BASE64": base64.StdEncoding.EncodeToString(make([]byte, 32)),
 		"PUSHKIN_API_KEY_HASH_PEPPER":           "test-api-key-pepper",
 		"PUSHKIN_ADMIN_MASTER_KEY":              "test-admin-master-key",
@@ -30,6 +32,8 @@ func TestLoadConfigUsesDefaults(t *testing.T) {
 		config.CampaignStatsBatchSize != defaultCampaignStatsBatchSize ||
 		config.InlineCampaignRunBatchSize != defaultInlineCampaignRunBatchSize ||
 		config.InlineCampaignFanoutBatchSize != defaultInlineCampaignFanoutBatchSize ||
+		config.NotificationProjectionBatchSize != defaultNotificationProjectionBatchSize ||
+		config.NotificationWriteMaxInFlight != defaultNotificationWriteMaxInFlight ||
 		config.ChannelProvisioningInterval != defaultChannelProvisioningInterval ||
 		config.KafkaWorkRetention != defaultKafkaWorkRetention ||
 		config.KafkaProgressRetention != defaultKafkaProgressRetention ||
@@ -58,6 +62,8 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 		{name: "invalid batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_DELIVERY_PROCESSING_BATCH_SIZE", "0")},
 		{name: "invalid inline run batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE", "0")},
 		{name: "invalid inline fanout batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE", "0")},
+		{name: "invalid notification projection batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE", "0")},
+		{name: "invalid notification write max in flight", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_NOTIFICATION_WRITE_MAX_IN_FLIGHT", "0")},
 		{name: "invalid campaign stats batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CAMPAIGN_STATS_BATCH_SIZE", "0")},
 		{name: "invalid telemetry export interval", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_TELEMETRY_METRICS_EXPORT_INTERVAL", "never")},
 		{name: "invalid starting timeout", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CAMPAIGN_STARTING_TIMEOUT", "never")},
@@ -89,6 +95,8 @@ func TestLoadConfigParsesOverrides(t *testing.T) {
 	env["PUSHKIN_CAMPAIGN_STATS_BATCH_SIZE"] = "55"
 	env["PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE"] = "60"
 	env["PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE"] = "70"
+	env["PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE"] = "80"
+	env["PUSHKIN_NOTIFICATION_WRITE_MAX_IN_FLIGHT"] = "90"
 	env["PUSHKIN_CHANNEL_PROVISIONING_INTERVAL"] = "3m"
 	env["PUSHKIN_KAFKA_WORK_RETENTION"] = "48h"
 	env["PUSHKIN_KAFKA_PROGRESS_RETENTION"] = "72h"
@@ -107,6 +115,7 @@ func TestLoadConfigParsesOverrides(t *testing.T) {
 		config.SchedulerInterval != 2*time.Second || config.SchedulerBatchSize != 40 ||
 		config.CampaignProgressBatchSize != 50 || config.CampaignStatsBatchSize != 55 || config.ChannelProvisioningInterval != 3*time.Minute ||
 		config.InlineCampaignRunBatchSize != 60 || config.InlineCampaignFanoutBatchSize != 70 ||
+		config.NotificationProjectionBatchSize != 80 || config.NotificationWriteMaxInFlight != 90 ||
 		config.KafkaWorkRetention != 48*time.Hour || config.KafkaProgressRetention != 72*time.Hour {
 		t.Fatalf("unexpected overrides: %+v", config)
 	}
@@ -125,6 +134,8 @@ func validConfigEnvironment() map[string]string {
 		"PUSHKIN_KAFKA_BROKERS":                 "kafka:9092",
 		"PUSHKIN_INSTANCE_ID":                   "test-instance",
 		"PUSHKIN_REDIS_ADDRESS":                 "redis:6379",
+		"PUSHKIN_CASSANDRA_HOSTS":               "cassandra:9042",
+		"PUSHKIN_CASSANDRA_KEYSPACE":            "pushkin_inbox",
 		"PUSHKIN_CREDENTIALS_CIPHER_KEY_BASE64": base64.StdEncoding.EncodeToString(make([]byte, 32)),
 		"PUSHKIN_API_KEY_HASH_PEPPER":           "test-api-key-pepper",
 		"PUSHKIN_ADMIN_MASTER_KEY":              "test-admin-master-key",

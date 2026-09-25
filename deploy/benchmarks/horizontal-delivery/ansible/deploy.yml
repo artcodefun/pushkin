@@ -23,11 +23,14 @@
           - tar
           - --exclude=.git
           - --exclude=./deploy
+          - --exclude=._*
           - --create
           - --gzip
           - --file={{ benchmark_source_archive }}
           - --directory={{ source_dir }}
           - .
+      environment:
+        COPYFILE_DISABLE: "1"
       changed_when: true
 
 - name: Install container runtime and build Pushkin image
@@ -101,7 +104,7 @@
         group: ubuntu
         mode: "0600"
 
-    - name: Start PostgreSQL Redis and Kafka
+    - name: Start PostgreSQL Redis Kafka and Cassandra
       ansible.builtin.command:
         argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", up, --detach]
       changed_when: true
@@ -115,9 +118,23 @@
       until: postgres_ready.rc == 0
       changed_when: false
 
+    - name: Wait for Cassandra
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", exec, --no-TTY, cassandra, cqlsh, localhost, "9042", -e, "DESCRIBE KEYSPACES"]
+      register: cassandra_ready
+      retries: 30
+      delay: 2
+      until: cassandra_ready.rc == 0
+      changed_when: false
+
     - name: Run migrations
       ansible.builtin.command:
         argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", run, --rm, migrate]
+      changed_when: true
+
+    - name: Run Cassandra migrations
+      ansible.builtin.command:
+        argv: [docker, compose, --file, "{{ benchmark_root }}/infrastructure.compose.yml", run, --rm, migrate-cassandra]
       changed_when: true
 
 - name: Start Fake FCM

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/superman/pushkin/internal/application"
 	"github.com/superman/pushkin/internal/application/ports"
@@ -72,7 +73,7 @@ func (s *BatchedSourceBatchFanoutService) Process(ctx context.Context) error {
 		return err
 	}
 
-	installationIDs, err := s.pushInstallationRepository.ListActiveIDs(
+	installationIDsByUser, err := s.pushInstallationRepository.ListActiveIDsByUsers(
 		ctx,
 		campaign.TenantID(),
 		batch.UserIDs(),
@@ -90,24 +91,33 @@ func (s *BatchedSourceBatchFanoutService) Process(ctx context.Context) error {
 		return fmt.Errorf("delivery topic: %w", err)
 	}
 
-	messages := make([]ports.OutboundKafkaMessage, 0, len(installationIDs)+1)
+	messages := make([]ports.OutboundKafkaMessage, 0, len(batch.UserIDs())+1)
 	header := contracts.NewMessageHeaderV1()
-	for _, installationID := range installationIDs {
-		work, err := domain.NewDeliveryWork(domain.NewDeliveryWorkParams{
-			CampaignID:         campaign.ID(),
-			TenantID:           campaign.TenantID(),
-			ChannelID:          campaign.ChannelID(),
-			PushInstallationID: installationID,
-			Priority:           campaign.Priority(),
-		})
-		if err != nil {
-			return fmt.Errorf("new delivery work: %w", err)
+	deliveryCount := 0
+	for _, userID := range batch.UserIDs() {
+		createdAt := time.Now().UTC()
+		notificationID := domain.NewNotificationID()
+		for _, installationID := range installationIDsByUser[userID] {
+			work, err := domain.NewDeliveryWork(domain.NewDeliveryWorkParams{
+				CampaignID:            campaign.ID(),
+				TenantID:              campaign.TenantID(),
+				NotificationID:        notificationID,
+				UserID:                userID,
+				NotificationCreatedAt: createdAt,
+				ChannelID:             campaign.ChannelID(),
+				PushInstallationID:    installationID,
+				Priority:              campaign.Priority(),
+			})
+			if err != nil {
+				return fmt.Errorf("new delivery work: %w", err)
+			}
+			messages = append(messages, ports.OutboundKafkaMessage{
+				Topic: deliveryTopic,
+				Key:   []byte(work.ID().String()),
+				Value: contracts.NewDeliveryWorkV1(work),
+			})
+			deliveryCount++
 		}
-		messages = append(messages, ports.OutboundKafkaMessage{
-			Topic: deliveryTopic,
-			Key:   []byte(work.ID().String()),
-			Value: contracts.NewDeliveryWorkV1(work),
-		})
 	}
 	messages = append(messages, ports.OutboundKafkaMessage{
 		Topic: contracts.TopicCampaignProgress,
@@ -117,7 +127,7 @@ func (s *BatchedSourceBatchFanoutService) Process(ctx context.Context) error {
 			Type:            contracts.CampaignProgressEventTypeSourceBatchFannedOut,
 			CampaignID:      campaign.ID(),
 			SourceBatchID:   batch.ID(),
-			DeliveryCount:   uint64(len(installationIDs)),
+			DeliveryCount:   uint64(deliveryCount),
 		},
 	})
 

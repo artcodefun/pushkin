@@ -1,7 +1,7 @@
 # Single-node delivery benchmark
 
 This is the baseline for the horizontal benchmark. One Pushkin VM runs the
-application together with PostgreSQL, Redis, Kafka, and migrations. A separate
+application together with PostgreSQL, Cassandra, Redis, Kafka, and migrations. A separate
 VM runs Fake FCM, keeping provider latency and network work outside Pushkin.
 
 The workload is 100,000 immediate one-recipient inline campaigns. It measures
@@ -37,8 +37,10 @@ load generator, prints Fake FCM counters, and writes a timestamped summary
 under `results/`. During the workload it polls both VMs over SSH. The result
 directory contains raw `metrics.ndjson`, an aggregated `metrics-summary.json`,
 and the same metrics nested in `summary.json`. Per-host CPU, memory and
-container load are always sampled; PostgreSQL, Redis, and Kafka consumer lag
-are sampled on the Pushkin VM.
+container load are always sampled; PostgreSQL, Cassandra, Redis, and Kafka consumer lag
+are sampled on the Pushkin VM. After Fake FCM finishes, the summary also records
+the final consumer lag for `pushkin.campaign.progress` and
+`pushkin.notification.accepted`.
 
 ```bash
 cd deploy/benchmarks/single-node-delivery
@@ -68,7 +70,7 @@ Every scenario owns `prepare.yml`, `start.yml`, and `wait.yml` under
 `ansible/scenarios/<scenario>/`; the top-level runner owns only infrastructure
 lifecycle and invokes those phases in order.
 
-`reset.sh` removes PostgreSQL, Redis, and Kafka data from the Pushkin VM,
+`reset.sh` removes PostgreSQL, Cassandra, Redis, and Kafka data from the Pushkin VM,
 resets Fake FCM counters, and deletes only the local dataset marker. It does
 not delete the VMs, network, benchmark secrets, or prior result files.
 

@@ -24,8 +24,11 @@ func TestRetryDeliveryServiceProcessPublishesTerminalResult(t *testing.T) {
 	if fixture.pipeline.pollCalls != 1 || fixture.pipeline.pollManyCalls != 0 {
 		t.Fatalf("retry processing must consume one record: poll=%d poll_many=%d", fixture.pipeline.pollCalls, fixture.pipeline.pollManyCalls)
 	}
-	if len(fixture.pipeline.transaction.messages) != 1 {
-		t.Fatalf("expected progress delta, got %d messages", len(fixture.pipeline.transaction.messages))
+	if len(fixture.pipeline.transaction.messages) != 2 {
+		t.Fatalf("expected notification and progress messages, got %d", len(fixture.pipeline.transaction.messages))
+	}
+	if _, ok := fixture.pipeline.transaction.messages[1].Value.(contracts.NotificationAcceptedV1); !ok {
+		t.Fatalf("expected accepted notification, got %T", fixture.pipeline.transaction.messages[1].Value)
 	}
 	delta, ok := fixture.pipeline.transaction.messages[0].Value.(contracts.CampaignProgressDeltaV1)
 	if !ok || delta.DeliveryAcceptedDelta != 1 || delta.DeliveryFailedDelta != 0 {
@@ -139,7 +142,7 @@ func newRetryDeliveryServiceFixture(t *testing.T, dueAt time.Time, outcome ports
 	}
 	record := ports.KafkaRecord{
 		Value: contracts.RetryWorkV1{
-			DeliveryWorkV1: contracts.DeliveryWorkV1{MessageHeaderV1: contracts.NewMessageHeaderV1(), DeliveryID: uuid.NewV7(), CampaignID: campaign.ID(), TenantID: tenantID, ChannelID: channel.ID(), PushInstallationID: installationID, Priority: string(domain.PriorityNormal), RetryAttempt: 1},
+			DeliveryWorkV1: contracts.DeliveryWorkV1{MessageHeaderV1: contracts.NewMessageHeaderV1(), DeliveryID: uuid.NewV7(), NotificationID: uuid.NewV7(), CampaignID: campaign.ID(), TenantID: tenantID, UserID: "user-1", ChannelID: channel.ID(), PushInstallationID: installationID, Priority: string(domain.PriorityNormal), RetryAttempt: 1, NotificationCreatedAt: time.Now().UTC()},
 			DueAt:          dueAt,
 		},
 		Offset: ports.KafkaOffset{Topic: topic, Partition: 3, Offset: 11},
