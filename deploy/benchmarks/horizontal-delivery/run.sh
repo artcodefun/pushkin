@@ -59,7 +59,7 @@ wait_for_ssh() {
 wait_for_ssh "$bastion_ip" bastion
 
 echo "==> Waiting for private nodes through the bastion"
-ansible -i "$inventory" all -m ansible.builtin.wait_for_connection -a 'timeout=300' >/dev/null
+ansible --forks 8 -i "$inventory" all -m ansible.builtin.wait_for_connection -a 'timeout=300 connect_timeout=5 sleep=1'
 
 echo "==> Deploying Pushkin, Kafka, PostgreSQL/Redis, Cassandra, and Fake FCM"
 ansible-playbook -i "$inventory" "$benchmark_dir/ansible/deploy.yml" \

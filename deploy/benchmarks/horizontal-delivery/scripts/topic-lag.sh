@@ -49,7 +49,7 @@ fi
 mkdir -p "$(dirname "$output")"
 
 describe_groups() {
-	ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o "ProxyJump=ubuntu@$bastion" "ubuntu@$host" \
+	ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o "ProxyCommand=ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ubuntu@$bastion" "ubuntu@$host" \
 		"sudo docker compose --file $compose_file exec --no-TTY kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:19092 --all-groups --describe --timeout 5000"
 }
 

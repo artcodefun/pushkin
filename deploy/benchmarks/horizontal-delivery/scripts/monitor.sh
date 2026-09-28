@@ -184,7 +184,7 @@ collect_host() {
     -o ConnectTimeout=5 \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
-    -o "ProxyJump=ubuntu@$bastion" \
+    -o "ProxyCommand=ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ubuntu@$bastion" \
     -o ControlMaster=auto \
     -o ControlPersist=60 \
     -o "ControlPath=$control_dir/%r@%h:%p" \

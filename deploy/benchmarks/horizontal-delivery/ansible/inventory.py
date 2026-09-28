@@ -34,7 +34,8 @@ def private_host(name: str, addresses: dict, bastion_ip: str, **variables: str) 
             "ansible_host": addresses["private_ip"],
             "private_ip": addresses["private_ip"],
             "ansible_ssh_common_args": (
-                f"-o ProxyJump=ubuntu@{bastion_ip} "
+                f'-o ProxyCommand="ssh -o BatchMode=yes -o StrictHostKeyChecking=no '
+                f'-o UserKnownHostsFile=/dev/null -W %h:%p ubuntu@{bastion_ip}" '
                 "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
             ),
             **variables,

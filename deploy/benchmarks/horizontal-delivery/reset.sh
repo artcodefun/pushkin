@@ -58,7 +58,7 @@ reset_compose() {
 
   echo "==> Resetting $label"
   ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o "ProxyJump=ubuntu@$bastion_ip" "ubuntu@$host" \
+    -o "ProxyCommand=ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -W %h:%p ubuntu@$bastion_ip" "ubuntu@$host" \
     "sudo docker compose --file $file down --volumes --remove-orphans"
 }
 
