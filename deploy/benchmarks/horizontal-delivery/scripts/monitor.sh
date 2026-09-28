@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: monitor.sh --output <metrics.ndjson> --summary <metrics-summary.json> [options] --host <name=ip>...
+usage: monitor.sh --output <metrics.ndjson> --summary <metrics-summary.json> --bastion <public-ip> [options] --host <name=private-ip>...
 
 Continuously collects benchmark resource samples through SSH until it receives
 SIGINT or SIGTERM. The script is an internal detail of run.sh.
@@ -13,6 +13,7 @@ EOF
 
 output=""
 summary=""
+bastion=""
 interval_seconds=1
 component_interval_seconds=5
 hosts=()
@@ -25,6 +26,10 @@ while (($# > 0)); do
       ;;
     --summary)
       summary="$2"
+      shift 2
+      ;;
+    --bastion)
+      bastion="$2"
       shift 2
       ;;
     --interval)
@@ -50,7 +55,7 @@ while (($# > 0)); do
   esac
 done
 
-if [[ -z "$output" || -z "$summary" || ${#hosts[@]} -eq 0 ]]; then
+if [[ -z "$output" || -z "$summary" || -z "$bastion" || ${#hosts[@]} -eq 0 ]]; then
   usage
   exit 2
 fi
@@ -177,7 +182,9 @@ collect_host() {
   if ! payload="$(ssh \
     -o BatchMode=yes \
     -o ConnectTimeout=5 \
-    -o StrictHostKeyChecking=accept-new \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    -o "ProxyJump=ubuntu@$bastion" \
     -o ControlMaster=auto \
     -o ControlPersist=60 \
     -o "ControlPath=$control_dir/%r@%h:%p" \

@@ -11,7 +11,7 @@ variable "ssh_public_key_path" {
 
 variable "ssh_allowed_cidr" {
   type        = string
-  description = "Operator public IPv4 CIDR allowed to use SSH, for example 203.0.113.10/32."
+  description = "Operator public IPv4 CIDR allowed to SSH to the bastion, for example 203.0.113.10/32."
 }
 
 variable "image_family" {
@@ -31,16 +31,6 @@ variable "pushkin_instance_count" {
   }
 }
 
-variable "infrastructure_cores" {
-  type    = number
-  default = 8
-}
-
-variable "infrastructure_memory_gb" {
-  type    = number
-  default = 16
-}
-
 variable "pushkin_cores" {
   type    = number
   default = 6
@@ -51,14 +41,69 @@ variable "pushkin_memory_gb" {
   default = 12
 }
 
+variable "pushkin_boot_disk_gb" {
+  type    = number
+  default = 20
+}
+
+variable "kafka_cores" {
+  type    = number
+  default = 6
+}
+
+variable "kafka_memory_gb" {
+  type    = number
+  default = 12
+}
+
+variable "kafka_boot_disk_gb" {
+  type    = number
+  default = 30
+}
+
+variable "postgres_cores" {
+  type    = number
+  default = 6
+}
+
+variable "postgres_memory_gb" {
+  type    = number
+  default = 12
+}
+
+variable "postgres_boot_disk_gb" {
+  type    = number
+  default = 30
+}
+
+variable "cassandra_cores" {
+  type    = number
+  default = 6
+}
+
+variable "cassandra_memory_gb" {
+  type    = number
+  default = 12
+}
+
+variable "cassandra_boot_disk_gb" {
+  type    = number
+  default = 30
+}
+
 variable "fake_fcm_cores" {
   type    = number
-  default = 4
+  default = 6
 }
 
 variable "fake_fcm_memory_gb" {
   type    = number
-  default = 8
+  default = 12
+}
+
+variable "fake_fcm_boot_disk_gb" {
+  type    = number
+  default = 20
 }
 
 variable "preemptible" {

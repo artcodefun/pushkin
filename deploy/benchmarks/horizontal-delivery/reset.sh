@@ -29,7 +29,7 @@ if [[ ! -f "$terraform_dir/terraform.tfvars" ]]; then
   echo "create $terraform_dir/terraform.tfvars from terraform.tfvars.example first" >&2
   exit 2
 fi
-for command in terraform; do
+for command in terraform ssh jq; do
   command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 2; }
 done
 
@@ -41,16 +41,15 @@ if [[ "$destroy" == true ]]; then
   exit 0
 fi
 
-for command in ssh jq; do
-  command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 2; }
-done
-
-infrastructure_ip="$(terraform -chdir="$terraform_dir" output -json infrastructure | jq -r '.public_ip')"
-fake_fcm_ip="$(terraform -chdir="$terraform_dir" output -json fake_fcm | jq -r '.public_ip')"
-pushkin_ips=()
-while IFS= read -r pushkin_ip; do
-  pushkin_ips+=("$pushkin_ip")
-done < <(terraform -chdir="$terraform_dir" output -json pushkin_instances | jq -r '.[].public_ip')
+bastion_ip="$(terraform -chdir="$terraform_dir" output -json bastion | jq -r '.public_ip')"
+postgres_private_ip="$(terraform -chdir="$terraform_dir" output -json postgres | jq -r '.private_ip')"
+kafka_private_ip="$(terraform -chdir="$terraform_dir" output -json kafka | jq -r '.private_ip')"
+cassandra_private_ip="$(terraform -chdir="$terraform_dir" output -json cassandra | jq -r '.private_ip')"
+fake_fcm_private_ip="$(terraform -chdir="$terraform_dir" output -json fake_fcm | jq -r '.private_ip')"
+pushkin_private_ips=()
+while IFS= read -r pushkin_private_ip; do
+  pushkin_private_ips+=("$pushkin_private_ip")
+done < <(terraform -chdir="$terraform_dir" output -json pushkin_instances | jq -r '.[].private_ip')
 
 reset_compose() {
   local host="$1"
@@ -58,15 +57,18 @@ reset_compose() {
   local label="$3"
 
   echo "==> Resetting $label"
-  ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "ubuntu@$host" \
+  ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o "ProxyJump=ubuntu@$bastion_ip" "ubuntu@$host" \
     "sudo docker compose --file $file down --volumes --remove-orphans"
 }
 
-for index in "${!pushkin_ips[@]}"; do
-  reset_compose "${pushkin_ips[$index]}" /opt/pushkin-benchmark/pushkin.compose.yml "Pushkin-$((index + 1))"
+for index in "${!pushkin_private_ips[@]}"; do
+  reset_compose "${pushkin_private_ips[$index]}" /opt/pushkin-benchmark/pushkin.compose.yml "Pushkin-$((index + 1))"
 done
-reset_compose "$infrastructure_ip" /opt/pushkin-benchmark/infrastructure.compose.yml "shared infrastructure"
-reset_compose "$fake_fcm_ip" /opt/pushkin-benchmark/fake-fcm.compose.yml "Fake FCM"
+reset_compose "$postgres_private_ip" /opt/pushkin-benchmark/postgres.compose.yml "PostgreSQL and Redis"
+reset_compose "$kafka_private_ip" /opt/pushkin-benchmark/kafka.compose.yml Kafka
+reset_compose "$cassandra_private_ip" /opt/pushkin-benchmark/cassandra.compose.yml Cassandra
+reset_compose "$fake_fcm_private_ip" /opt/pushkin-benchmark/fake-fcm.compose.yml "Fake FCM"
 
 rm -f "$state_dir/dataset.yml"
 echo "==> Benchmark environment reset; run ./run.sh batched-ten to start again"

@@ -4,17 +4,22 @@ set -euo pipefail
 
 usage() {
 	cat >&2 <<'EOF'
-usage: topic-lag.sh --host <public-ip> --compose-file <path> --output <path>
+usage: topic-lag.sh --bastion <public-ip> --host <private-ip> --compose-file <path> --output <path>
 EOF
 }
 
 host=""
+bastion=""
 compose_file=""
 output=""
 while (($# > 0)); do
 	case "$1" in
 		--host)
 			host="$2"
+			shift 2
+			;;
+		--bastion)
+			bastion="$2"
 			shift 2
 			;;
 		--compose-file)
@@ -36,7 +41,7 @@ while (($# > 0)); do
 	esac
 done
 
-if [[ -z "$host" || -z "$compose_file" || -z "$output" ]]; then
+if [[ -z "$bastion" || -z "$host" || -z "$compose_file" || -z "$output" ]]; then
 	usage
 	exit 2
 fi
@@ -44,7 +49,7 @@ fi
 mkdir -p "$(dirname "$output")"
 
 describe_groups() {
-	ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "ubuntu@$host" \
+	ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o "ProxyJump=ubuntu@$bastion" "ubuntu@$host" \
 		"sudo docker compose --file $compose_file exec --no-TTY kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:19092 --all-groups --describe --timeout 5000"
 }
 

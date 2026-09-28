@@ -103,13 +103,13 @@
 
     - name: Insert users and installations with one set-based SQL operation
       become: true
-      delegate_to: "{{ groups['infrastructure'][0] }}"
+      delegate_to: "{{ groups['postgres'][0] }}"
       ansible.builtin.command:
         argv:
           - docker
           - compose
           - --file
-          - "{{ benchmark_root }}/infrastructure.compose.yml"
+          - "{{ benchmark_root }}/postgres.compose.yml"
           - exec
           - --no-TTY
           - postgres

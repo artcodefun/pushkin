@@ -1,9 +1,16 @@
 # Horizontal delivery benchmark
 
-This experiment compares a single Pushkin instance with a group of four
-instances sharing Kafka consumer groups. One infrastructure VM runs PostgreSQL,
-Cassandra, Redis, Kafka and migrations. Four Pushkin VMs run one service process each. A
-separate VM runs Fake FCM.
+This experiment runs four Pushkin instances sharing Kafka consumer groups. The
+first Pushkin VM is the only public SSH bastion; every other VM is private and
+is reached through it. Kafka, PostgreSQL with Redis, Cassandra, and Fake FCM
+each run on their own VM, so database and broker contention can be measured
+separately from Pushkin.
+
+The default shape uses 48 vCPU and 190 GB of network SSD: four 6-vCPU
+Pushkin VMs plus four 6-vCPU service VMs. Every VM uses 12 GB of memory, which
+is a supported size for six cores on this platform. PostgreSQL/Redis and Fake
+FCM each therefore receive six cores rather than competing with Kafka or
+Cassandra on a shared host.
 
 Kafka topics use four partitions in the application. This matches the four
 Pushkin instances in the benchmark. Partition count is an immutable
@@ -13,7 +20,7 @@ recreates Kafka from an empty volume.
 ## Prerequisites
 
 - Terraform 1.6+, authenticated Yandex Cloud CLI, and an SSH public key.
-- Ansible Core 2.21+ available as `ansible-playbook`.
+- Ansible Core 2.21+ available as `ansible` and `ansible-playbook`.
 - SSH and `jq` on the operator machine.
 
 Set the normal Yandex Cloud environment variables; do not place tokens in this
@@ -65,10 +72,10 @@ stacks and their volumes. Results and Terraform resources are preserved:
 ./run.sh batched-ten
 ```
 
-`reset.sh` removes PostgreSQL, Cassandra, Redis, and Kafka data from the infrastructure
-VM, stops all Pushkin instances, resets Fake FCM counters, and deletes only the
-local dataset marker. It does not delete the VMs, network, benchmark secrets,
-or prior result files.
+`reset.sh` removes PostgreSQL, Cassandra, Redis, and Kafka data from their
+respective VMs, stops all Pushkin instances, resets Fake FCM counters, and
+deletes only the local dataset marker. It does not delete the VMs, network,
+benchmark secrets, or prior result files.
 
 ## Cleanup
 

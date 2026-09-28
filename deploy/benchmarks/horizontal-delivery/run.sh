@@ -20,7 +20,7 @@ if [[ ! -f "$terraform_dir/terraform.tfvars" ]]; then
   echo "create $terraform_dir/terraform.tfvars from terraform.tfvars.example first" >&2
   exit 2
 fi
-for command in terraform ansible-playbook ssh jq git; do
+for command in terraform ansible ansible-playbook ssh jq git; do
   command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 2; }
 done
 
@@ -32,20 +32,22 @@ echo "==> Provisioning Yandex Cloud environment"
 terraform -chdir="$terraform_dir" init
 terraform -chdir="$terraform_dir" apply -auto-approve
 
-infrastructure_ip="$(terraform -chdir="$terraform_dir" output -json infrastructure | jq -r '.public_ip')"
-fake_fcm_ip="$(terraform -chdir="$terraform_dir" output -json fake_fcm | jq -r '.public_ip')"
+bastion_ip="$(terraform -chdir="$terraform_dir" output -json bastion | jq -r '.public_ip')"
+postgres_private_ip="$(terraform -chdir="$terraform_dir" output -json postgres | jq -r '.private_ip')"
+kafka_private_ip="$(terraform -chdir="$terraform_dir" output -json kafka | jq -r '.private_ip')"
+cassandra_private_ip="$(terraform -chdir="$terraform_dir" output -json cassandra | jq -r '.private_ip')"
 fake_fcm_private_ip="$(terraform -chdir="$terraform_dir" output -json fake_fcm | jq -r '.private_ip')"
-pushkin_ips=()
-while IFS= read -r pushkin_ip; do
-  pushkin_ips+=("$pushkin_ip")
-done < <(terraform -chdir="$terraform_dir" output -json pushkin_instances | jq -r '.[].public_ip')
+pushkin_private_ips=()
+while IFS= read -r pushkin_private_ip; do
+  pushkin_private_ips+=("$pushkin_private_ip")
+done < <(terraform -chdir="$terraform_dir" output -json pushkin_instances | jq -r '.[].private_ip')
 
 wait_for_ssh() {
   local host="$1"
   local label="$2"
   echo "==> Waiting for SSH on $label ($host)"
   for _ in {1..60}; do
-    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new "ubuntu@$host" true; then
+    if ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "ubuntu@$host" true; then
       return
     fi
     sleep 5
@@ -54,13 +56,12 @@ wait_for_ssh() {
   exit 1
 }
 
-wait_for_ssh "$infrastructure_ip" infrastructure
-wait_for_ssh "$fake_fcm_ip" fake-fcm
-for index in "${!pushkin_ips[@]}"; do
-  wait_for_ssh "${pushkin_ips[$index]}" "pushkin-$((index + 1))"
-done
+wait_for_ssh "$bastion_ip" bastion
 
-echo "==> Deploying three Pushkin instances and shared infrastructure"
+echo "==> Waiting for private nodes through the bastion"
+ansible -i "$inventory" all -m ansible.builtin.wait_for_connection -a 'timeout=300' >/dev/null
+
+echo "==> Deploying Pushkin, Kafka, PostgreSQL/Redis, Cassandra, and Fake FCM"
 ansible-playbook -i "$inventory" "$benchmark_dir/ansible/deploy.yml" \
   -e "pushkin_source_dir=$benchmark_dir/../../.."
 
@@ -81,11 +82,14 @@ echo "==> Starting resource monitor"
 monitor_args=(
   --output "$metrics_output"
   --summary "$metrics_summary"
-  --host "infrastructure=$infrastructure_ip"
-  --host "fake-fcm=$fake_fcm_ip"
+  --bastion "$bastion_ip"
+  --host "postgres=$postgres_private_ip"
+  --host "kafka=$kafka_private_ip"
+  --host "cassandra=$cassandra_private_ip"
+  --host "fake-fcm=$fake_fcm_private_ip"
 )
-for index in "${!pushkin_ips[@]}"; do
-  monitor_args+=(--host "pushkin-$((index + 1))=${pushkin_ips[$index]}")
+for index in "${!pushkin_private_ips[@]}"; do
+  monitor_args+=(--host "pushkin-$((index + 1))=${pushkin_private_ips[$index]}")
 done
 bash "$monitor" "${monitor_args[@]}" &
 monitor_pid=$!
@@ -103,15 +107,16 @@ echo "==> Starting scenario $scenario"
 ansible-playbook -i "$inventory" "$scenario_dir/start.yml" "${scenario_args[@]}"
 
 echo "==> Waiting for scenario $scenario to finish"
-FAKE_FCM_IP="$fake_fcm_ip" \
+BASTION_IP="$bastion_ip" \
 FAKE_FCM_PRIVATE_IP="$fake_fcm_private_ip" \
 BENCHMARK_RESULTS_DIR="$run_results_dir" \
 "$scenario_dir/wait.sh"
 
 echo "==> Collecting final Kafka topic lag"
 bash "$topic_lag" \
-  --host "$infrastructure_ip" \
-  --compose-file /opt/pushkin-benchmark/infrastructure.compose.yml \
+  --bastion "$bastion_ip" \
+  --host "$kafka_private_ip" \
+  --compose-file /opt/pushkin-benchmark/kafka.compose.yml \
   --output "$run_results_dir/topic-lags.json"
 cat "$run_results_dir/topic-lags.json"
 

@@ -4,12 +4,12 @@ services:
   pushkin:
     image: {{ pushkin_image }}
     environment:
-      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@{{ infrastructure_private_ip }}:5432/pushkin?sslmode=disable
+      PUSHKIN_POSTGRES_DSN: postgres://pushkin:pushkin@{{ postgres_private_ip }}:5432/pushkin?sslmode=disable
       PUSHKIN_MIGRATIONS_TABLE: pushkin_schema_migrations
       PUSHKIN_HTTP_ADDRESS: :8080
-      PUSHKIN_KAFKA_BROKERS: {{ infrastructure_private_ip }}:9092
-      PUSHKIN_REDIS_ADDRESS: {{ infrastructure_private_ip }}:6379
-      PUSHKIN_CASSANDRA_HOSTS: {{ infrastructure_private_ip }}:9042
+      PUSHKIN_KAFKA_BROKERS: {{ kafka_private_ip }}:9092
+      PUSHKIN_REDIS_ADDRESS: {{ postgres_private_ip }}:6379
+      PUSHKIN_CASSANDRA_HOSTS: {{ cassandra_private_ip }}:9042
       PUSHKIN_CASSANDRA_KEYSPACE: pushkin_inbox
       PUSHKIN_INSTANCE_ID: {{ instance_id }}
       PUSHKIN_API_KEY_HASH_PEPPER: {{ hostvars['localhost'].benchmark_api_key_pepper }}
