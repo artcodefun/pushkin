@@ -16,8 +16,9 @@ func TestNewTopicProvisionerValidatesParameters(t *testing.T) {
 		params TopicProvisionerParams
 	}{
 		{name: "missing brokers", params: TopicProvisionerParams{WorkRetention: time.Hour, ProgressRetention: time.Hour}},
-		{name: "zero work retention", params: TopicProvisionerParams{Brokers: []string{"localhost:9092"}, ProgressRetention: time.Hour}},
-		{name: "zero progress retention", params: TopicProvisionerParams{Brokers: []string{"localhost:9092"}, WorkRetention: time.Hour}},
+		{name: "zero replication factor", params: TopicProvisionerParams{Brokers: []string{"localhost:9092"}, WorkRetention: time.Hour, ProgressRetention: time.Hour}},
+		{name: "zero work retention", params: TopicProvisionerParams{Brokers: []string{"localhost:9092"}, ReplicationFactor: 1, ProgressRetention: time.Hour}},
+		{name: "zero progress retention", params: TopicProvisionerParams{Brokers: []string{"localhost:9092"}, ReplicationFactor: 1, WorkRetention: time.Hour}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

@@ -25,6 +25,10 @@ const (
 	defaultChannelProvisioningInterval     = time.Second
 	defaultKafkaWorkRetention              = 7 * 24 * time.Hour
 	defaultKafkaProgressRetention          = 14 * 24 * time.Hour
+	defaultKafkaTopicReplicationFactor     = 1
+	defaultCassandraLocalDatacenter        = "dc1"
+	defaultCassandraReplicationFactor      = 1
+	defaultCassandraConsistency            = "ONE"
 	defaultTelemetryMetricsExportInterval  = 10 * time.Second
 )
 
@@ -35,10 +39,14 @@ type Config struct {
 	PostgresDSN                     string
 	HTTPAddress                     string
 	KafkaBrokers                    []string
+	KafkaTopicReplicationFactor     int
 	InstanceID                      string
 	RedisAddress                    string
 	CassandraHosts                  []string
 	CassandraKeyspace               string
+	CassandraLocalDatacenter        string
+	CassandraReplicationFactor      int
+	CassandraConsistency            string
 	CredentialsCipherKey            []byte
 	APIKeyHashPepper                []byte
 	AdminMasterKey                  string
@@ -83,6 +91,17 @@ func loadConfig(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	topicReplicationFactor, err := positiveIntEnv(
+		getenv,
+		"PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR",
+		defaultKafkaTopicReplicationFactor,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	if topicReplicationFactor > 32_767 {
+		return Config{}, fmt.Errorf("PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR must not exceed 32767")
+	}
 	instanceID, err := requiredEnv(getenv, "PUSHKIN_INSTANCE_ID")
 	if err != nil {
 		return Config{}, err
@@ -98,6 +117,25 @@ func loadConfig(getenv func(string) string) (Config, error) {
 	cassandraKeyspace, err := requiredEnv(getenv, "PUSHKIN_CASSANDRA_KEYSPACE")
 	if err != nil {
 		return Config{}, err
+	}
+	cassandraLocalDatacenter := strings.TrimSpace(getenv("PUSHKIN_CASSANDRA_LOCAL_DATACENTER"))
+	if cassandraLocalDatacenter == "" {
+		cassandraLocalDatacenter = defaultCassandraLocalDatacenter
+	}
+	cassandraReplicationFactor, err := positiveIntEnv(
+		getenv,
+		"PUSHKIN_CASSANDRA_REPLICATION_FACTOR",
+		defaultCassandraReplicationFactor,
+	)
+	if err != nil {
+		return Config{}, err
+	}
+	cassandraConsistency, err := cassandraConsistencyEnv(getenv, "PUSHKIN_CASSANDRA_CONSISTENCY", defaultCassandraConsistency)
+	if err != nil {
+		return Config{}, err
+	}
+	if cassandraConsistency == "LOCAL_QUORUM" && cassandraReplicationFactor < 2 {
+		return Config{}, fmt.Errorf("PUSHKIN_CASSANDRA_CONSISTENCY LOCAL_QUORUM requires PUSHKIN_CASSANDRA_REPLICATION_FACTOR of at least 2")
 	}
 	schedulerInterval, err := positiveDurationEnv(getenv, "PUSHKIN_SCHEDULER_INTERVAL", defaultSchedulerInterval)
 	if err != nil {
@@ -228,10 +266,14 @@ func loadConfig(getenv func(string) string) (Config, error) {
 		PostgresDSN:                     postgresDSN,
 		HTTPAddress:                     httpAddress,
 		KafkaBrokers:                    brokers,
+		KafkaTopicReplicationFactor:     topicReplicationFactor,
 		InstanceID:                      instanceID,
 		RedisAddress:                    redisAddress,
 		CassandraHosts:                  cassandraHosts,
 		CassandraKeyspace:               cassandraKeyspace,
+		CassandraLocalDatacenter:        cassandraLocalDatacenter,
+		CassandraReplicationFactor:      cassandraReplicationFactor,
+		CassandraConsistency:            cassandraConsistency,
 		CredentialsCipherKey:            cipherKey,
 		APIKeyHashPepper:                []byte(apiKeyHashPepper),
 		AdminMasterKey:                  adminMasterKey,
@@ -320,6 +362,19 @@ func positiveIntEnv(getenv func(string) string, name string, fallback int) (int,
 		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
 	return parsed, nil
+}
+
+func cassandraConsistencyEnv(getenv func(string) string, name, fallback string) (string, error) {
+	value := strings.ToUpper(strings.TrimSpace(getenv(name)))
+	if value == "" {
+		value = fallback
+	}
+	switch value {
+	case "ONE", "LOCAL_QUORUM":
+		return value, nil
+	default:
+		return "", fmt.Errorf("%s must be ONE or LOCAL_QUORUM", name)
+	}
 }
 
 func positiveDurationEnv(getenv func(string) string, name string, fallback time.Duration) (time.Duration, error) {

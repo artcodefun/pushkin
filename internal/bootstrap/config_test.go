@@ -43,6 +43,10 @@ func TestLoadConfigUsesDefaults(t *testing.T) {
 	if len(config.KafkaBrokers) != 2 || config.KafkaBrokers[1] != "kafka-2:9092" {
 		t.Fatalf("unexpected Kafka brokers: %v", config.KafkaBrokers)
 	}
+	if config.KafkaTopicReplicationFactor != 1 || config.CassandraLocalDatacenter != "dc1" ||
+		config.CassandraReplicationFactor != 1 || config.CassandraConsistency != "ONE" {
+		t.Fatalf("unexpected default topology configuration: %+v", config)
+	}
 	if config.TelemetryOTLPEndpoint != "" || config.TelemetryServiceName != "pushkin" {
 		t.Fatalf("unexpected default telemetry configuration: %+v", config)
 	}
@@ -60,6 +64,11 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 		{name: "wrong cipher key size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CREDENTIALS_CIPHER_KEY_BASE64", base64.StdEncoding.EncodeToString(make([]byte, 31)))},
 		{name: "empty Kafka broker", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_KAFKA_BROKERS", "kafka-1:9092, ")},
 		{name: "invalid batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_DELIVERY_PROCESSING_BATCH_SIZE", "0")},
+		{name: "invalid Kafka replication factor", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR", "0")},
+		{name: "Kafka replication factor overflow", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR", "32768")},
+		{name: "invalid Cassandra replication factor", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_REPLICATION_FACTOR", "0")},
+		{name: "invalid Cassandra consistency", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_CONSISTENCY", "QUORUM")},
+		{name: "local quorum with one Cassandra replica", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_CONSISTENCY", "LOCAL_QUORUM")},
 		{name: "invalid inline run batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE", "0")},
 		{name: "invalid inline fanout batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE", "0")},
 		{name: "invalid notification projection batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE", "0")},
@@ -100,6 +109,10 @@ func TestLoadConfigParsesOverrides(t *testing.T) {
 	env["PUSHKIN_CHANNEL_PROVISIONING_INTERVAL"] = "3m"
 	env["PUSHKIN_KAFKA_WORK_RETENTION"] = "48h"
 	env["PUSHKIN_KAFKA_PROGRESS_RETENTION"] = "72h"
+	env["PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR"] = "3"
+	env["PUSHKIN_CASSANDRA_LOCAL_DATACENTER"] = "production-dc"
+	env["PUSHKIN_CASSANDRA_REPLICATION_FACTOR"] = "3"
+	env["PUSHKIN_CASSANDRA_CONSISTENCY"] = "LOCAL_QUORUM"
 	env["PUSHKIN_USE_TEST_SENDER"] = "true"
 	env["PUSHKIN_TEST_SENDER_URL"] = "http://fake-fcm:8081"
 	env["OTEL_EXPORTER_OTLP_ENDPOINT"] = "telemetry:4317"
@@ -121,6 +134,10 @@ func TestLoadConfigParsesOverrides(t *testing.T) {
 	}
 	if !config.UseTestSender || config.TestSenderURL != "http://fake-fcm:8081" {
 		t.Fatalf("unexpected test sender configuration: %+v", config)
+	}
+	if config.KafkaTopicReplicationFactor != 3 || config.CassandraLocalDatacenter != "production-dc" ||
+		config.CassandraReplicationFactor != 3 || config.CassandraConsistency != "LOCAL_QUORUM" {
+		t.Fatalf("unexpected topology configuration: %+v", config)
 	}
 	if config.TelemetryOTLPEndpoint != "telemetry:4317" || config.TelemetryServiceName != "pushkin-test" ||
 		config.TelemetryMetricsExportInterval != 5*time.Second {

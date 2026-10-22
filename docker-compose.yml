@@ -42,6 +42,8 @@ services:
     restart: "no"
     environment:
       PUSHKIN_CASSANDRA_KEYSPACE: pushkin_inbox
+      PUSHKIN_CASSANDRA_LOCAL_DATACENTER: ${PUSHKIN_CASSANDRA_LOCAL_DATACENTER:-dc1}
+      PUSHKIN_CASSANDRA_REPLICATION_FACTOR: ${PUSHKIN_CASSANDRA_REPLICATION_FACTOR:-1}
     depends_on:
       cassandra:
         condition: service_healthy

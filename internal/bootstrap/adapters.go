@@ -91,6 +91,13 @@ func NewAdapters(config Config) (*Adapters, error) {
 	}()
 	cassandraCluster := gocql.NewCluster(config.CassandraHosts...)
 	cassandraCluster.Keyspace = config.CassandraKeyspace
+	cassandraCluster.Consistency, err = cassandraConsistency(config.CassandraConsistency)
+	if err != nil {
+		return nil, err
+	}
+	cassandraCluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(
+		gocql.DCAwareRoundRobinPolicy(config.CassandraLocalDatacenter),
+	)
 	cassandraSession, err := cassandraCluster.CreateSession()
 	if err != nil {
 		return nil, fmt.Errorf("create Cassandra session: %w", err)
@@ -120,6 +127,7 @@ func NewAdapters(config Config) (*Adapters, error) {
 	}()
 	topicProvisioner, err := infrakafka.NewTopicProvisioner(infrakafka.TopicProvisionerParams{
 		Brokers:           config.KafkaBrokers,
+		ReplicationFactor: int16(config.KafkaTopicReplicationFactor),
 		WorkRetention:     config.KafkaWorkRetention,
 		ProgressRetention: config.KafkaProgressRetention,
 	})
@@ -323,6 +331,17 @@ func NewAdapters(config Config) (*Adapters, error) {
 		userEventsConsumer:             userEventsConsumer,
 		compactedTopicLoader:           compactedTopicLoader,
 	}, nil
+}
+
+func cassandraConsistency(value string) (gocql.Consistency, error) {
+	switch value {
+	case "ONE":
+		return gocql.One, nil
+	case "LOCAL_QUORUM":
+		return gocql.LocalQuorum, nil
+	default:
+		return 0, fmt.Errorf("unsupported Cassandra consistency %q", value)
+	}
 }
 
 func newPushHTTPClient(maxInFlight int) *http.Client {

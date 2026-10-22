@@ -6,12 +6,23 @@ set -euo pipefail
 cassandra_host="${PUSHKIN_CASSANDRA_HOST:-cassandra}"
 cassandra_port="${PUSHKIN_CASSANDRA_PORT:-9042}"
 migrations_dir="${PUSHKIN_CASSANDRA_MIGRATIONS_DIR:-/migrations}"
+cassandra_local_datacenter="${PUSHKIN_CASSANDRA_LOCAL_DATACENTER:-dc1}"
+cassandra_replication_factor="${PUSHKIN_CASSANDRA_REPLICATION_FACTOR:-1}"
+
+if ! [[ "$cassandra_local_datacenter" =~ ^[[:alnum:]_-]+$ ]]; then
+	echo "PUSHKIN_CASSANDRA_LOCAL_DATACENTER must contain only letters, digits, underscores, or hyphens" >&2
+	exit 1
+fi
+if ! [[ "$cassandra_replication_factor" =~ ^[1-9][0-9]*$ ]]; then
+	echo "PUSHKIN_CASSANDRA_REPLICATION_FACTOR must be a positive integer" >&2
+	exit 1
+fi
 
 cqlsh() {
 	command cqlsh "$cassandra_host" "$cassandra_port" "$@"
 }
 
-cqlsh -e "CREATE KEYSPACE IF NOT EXISTS ${PUSHKIN_CASSANDRA_KEYSPACE} WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}"
+cqlsh -e "CREATE KEYSPACE IF NOT EXISTS ${PUSHKIN_CASSANDRA_KEYSPACE} WITH replication = {'class': 'NetworkTopologyStrategy', '${cassandra_local_datacenter}': ${cassandra_replication_factor}}"
 cqlsh -k "$PUSHKIN_CASSANDRA_KEYSPACE" -e 'CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamp)'
 
 while IFS= read -r migration; do

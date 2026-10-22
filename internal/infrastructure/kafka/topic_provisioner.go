@@ -31,12 +31,14 @@ type TopicProvisioner struct {
 	mu                sync.Mutex
 	client            *kgo.Client
 	admin             *kadm.Client
+	replicationFactor int16
 	workRetention     time.Duration
 	progressRetention time.Duration
 }
 
 type TopicProvisionerParams struct {
 	Brokers           []string
+	ReplicationFactor int16
 	WorkRetention     time.Duration
 	ProgressRetention time.Duration
 }
@@ -44,6 +46,9 @@ type TopicProvisionerParams struct {
 func NewTopicProvisioner(params TopicProvisionerParams) (*TopicProvisioner, error) {
 	if len(params.Brokers) == 0 {
 		return nil, fmt.Errorf("Kafka topic provisioner brokers must not be empty")
+	}
+	if params.ReplicationFactor <= 0 {
+		return nil, fmt.Errorf("Kafka topic replication factor must be positive")
 	}
 	if params.WorkRetention <= 0 {
 		return nil, fmt.Errorf("Kafka work retention must be positive")
@@ -58,6 +63,7 @@ func NewTopicProvisioner(params TopicProvisionerParams) (*TopicProvisioner, erro
 	return &TopicProvisioner{
 		client:            client,
 		admin:             kadm.NewClient(client),
+		replicationFactor: params.ReplicationFactor,
 		workRetention:     params.WorkRetention,
 		progressRetention: params.ProgressRetention,
 	}, nil
@@ -127,7 +133,7 @@ func (p *TopicProvisioner) ensure(
 	for index, topic := range topics {
 		names[index] = string(topic)
 	}
-	responses, err := p.admin.CreateTopics(ctx, pushkinTopicPartitions, -1, configs, names...)
+	responses, err := p.admin.CreateTopics(ctx, pushkinTopicPartitions, p.replicationFactor, configs, names...)
 	if err != nil {
 		return fmt.Errorf("create Kafka topics: %w", err)
 	}
@@ -155,15 +161,15 @@ func (p *TopicProvisioner) ensure(
 	// metadata are immediately visible to separate producer/consumer clients.
 	// Wait for every requested topic, including newly created ones, before
 	// workers begin producing to them.
-	return p.validatePartitionCount(ctx, names)
+	return p.validateTopology(ctx, names)
 }
 
-func (p *TopicProvisioner) validatePartitionCount(ctx context.Context, names []string) error {
+func (p *TopicProvisioner) validateTopology(ctx context.Context, names []string) error {
 	timeout := time.NewTimer(topicMetadataRetryTimeout)
 	defer timeout.Stop()
 
 	for {
-		err := p.validatePartitionCountOnce(ctx, names)
+		err := p.validateTopologyOnce(ctx, names)
 		if err == nil {
 			return nil
 		}
@@ -184,7 +190,7 @@ func (p *TopicProvisioner) validatePartitionCount(ctx context.Context, names []s
 	}
 }
 
-func (p *TopicProvisioner) validatePartitionCountOnce(ctx context.Context, names []string) error {
+func (p *TopicProvisioner) validateTopologyOnce(ctx context.Context, names []string) error {
 	details, err := p.admin.ListTopics(ctx, names...)
 	if err != nil {
 		return fmt.Errorf("describe Kafka topics: %w", err)
@@ -220,6 +226,15 @@ func (p *TopicProvisioner) validatePartitionCountOnce(ctx context.Context, names
 					name,
 					partitionID,
 					kerr.LeaderNotAvailable,
+				)
+			}
+			if len(partition.Replicas) != int(p.replicationFactor) {
+				return fmt.Errorf(
+					"Kafka topic %q partition %d has replication factor %d; Pushkin requires %d; migrate the topic topology before startup",
+					name,
+					partitionID,
+					len(partition.Replicas),
+					p.replicationFactor,
 				)
 			}
 		}

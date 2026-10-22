@@ -341,6 +341,7 @@ func TestTopicProvisionerEnsuresSystemAndChannelTopics(t *testing.T) {
 	brokers := startKafka(t, ctx)
 	provisioner, err := adapter.NewTopicProvisioner(adapter.TopicProvisionerParams{
 		Brokers:           brokers,
+		ReplicationFactor: 1,
 		WorkRetention:     24 * time.Hour,
 		ProgressRetention: 48 * time.Hour,
 	})

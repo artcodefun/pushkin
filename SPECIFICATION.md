@@ -459,8 +459,10 @@ Channel, но не заменяет распределённое огранич�
 В v1 Pushkin создаёт все internal topics с фиксированными четырьмя partitions.
 Это часть topology: изменение числа partitions требует координированной
 миграции topic-ов, а не изменения environment variable. Replication factor
-остаётся политикой Kafka cluster; Pushkin задаёт cleanup policy и retention из
-runtime configuration.
+передаётся Pushkin через typed runtime configuration: provisioner создаёт
+новые topics с этим значением и отказывается запускаться, если существующая
+partition имеет другую топологию. Число broker-ов и `min.insync.replicas`
+остаются политикой Kafka cluster; Pushkin использует `acks=all`.
 
 Один channel provisioning worker на pod с настраиваемым interval читает
 активные Channel с доступным tenant и Provider из PostgreSQL и сверяет их с локальным набором
@@ -582,6 +584,10 @@ values. Начальные значения предназначены для б
 | `PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE` | `100` | Максимум accepted notification records за один projection run. |
 | `PUSHKIN_NOTIFICATION_WRITE_MAX_IN_FLIGHT` | `50` | Максимум параллельных Cassandra inserts в одном notification projection run. |
 | `PUSHKIN_CHANNEL_PROVISIONING_INTERVAL` | `1s` | Частота reconcile runnable Channel и локальных channel workers на pod. |
+| `PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR` | `1` | Число replicas для создаваемых internal Kafka topics. Для production-кластера из трёх broker-ов — `3`; изменение существующего topic требует topology migration. |
+| `PUSHKIN_CASSANDRA_LOCAL_DATACENTER` | `dc1` | Локальный Cassandra DC для DC-aware routing. |
+| `PUSHKIN_CASSANDRA_REPLICATION_FACTOR` | `1` | Replication factor keyspace при его первоначальном создании migration job-ом. Для production Cassandra из трёх nodes — `3`. Не изменяет существующий keyspace автоматически. |
+| `PUSHKIN_CASSANDRA_CONSISTENCY` | `ONE` | Cassandra consistency для inbox reads/writes: `ONE` для single-node, `LOCAL_QUORUM` для production. `LOCAL_QUORUM` требует RF не меньше `2`. |
 | `PUSHKIN_CREDENTIALS_CIPHER_KEY_BASE64` | — | Обязательный AES-256-GCM ключ в base64; хранится вне PostgreSQL. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Необязательный OTLP gRPC endpoint для metrics export. Без него telemetry no-op. |
 | `PUSHKIN_TELEMETRY_METRICS_EXPORT_INTERVAL` | `10s` | Интервал periodic OTLP metrics export. |
