@@ -28,7 +28,7 @@ func TestTransactionalConsumerAssignmentChangesExcludesInitialAssignment(t *test
 		assignmentChanges: make(chan struct{}, 1),
 	}
 
-	consumer.onPartitionsAssigned(context.Background(), nil, map[string][]int32{
+	consumer.onPartitionsAssigned(0, context.Background(), nil, map[string][]int32{
 		string(contracts.TopicCampaignProgress): {0},
 	})
 	select {
@@ -37,7 +37,7 @@ func TestTransactionalConsumerAssignmentChangesExcludesInitialAssignment(t *test
 	default:
 	}
 
-	consumer.onPartitionsAssigned(context.Background(), nil, map[string][]int32{
+	consumer.onPartitionsAssigned(0, context.Background(), nil, map[string][]int32{
 		string(contracts.TopicCampaignProgress): {1},
 	})
 	select {
@@ -65,7 +65,7 @@ func TestTransactionalConsumerAssignmentChangesCoalescesRebalances(t *testing.T)
 	}
 
 	for range 3 {
-		consumer.onPartitionsAssigned(context.Background(), nil, map[string][]int32{
+		consumer.onPartitionsAssigned(0, context.Background(), nil, map[string][]int32{
 			string(contracts.TopicCampaignProgress): {0},
 		})
 	}

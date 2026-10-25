@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -44,10 +45,15 @@ func NewCampaignStatsProjectionService(
 // Process persists the latest snapshot for every campaign in one Kafka batch
 // before committing its offsets. A crash after PostgreSQL commit causes safe
 // replay because every snapshot is absolute.
-func (s *CampaignStatsProjectionService) Process(ctx context.Context) error {
+func (s *CampaignStatsProjectionService) Process(ctx context.Context) (err error) {
 	if s.batchSize <= 0 {
 		return fmt.Errorf("campaign stats batch size: %w", application.ErrValidation)
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	records, err := s.kafkaConsumer.PollMany(ctx, s.batchSize)
 	if err != nil || len(records) == 0 {
 		return err

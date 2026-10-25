@@ -59,6 +59,7 @@ func (*notificationRepositoryFake) MarkRead(context.Context, domain.TenantID, do
 }
 
 type notificationConsumerFake struct {
+	kafkaPipelineControlFake
 	records   []ports.KafkaRecord
 	committed []ports.KafkaRecord
 }

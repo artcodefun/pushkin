@@ -54,8 +54,11 @@ type OutboundKafkaMessage struct {
 
 // KafkaConsumer consumes a fixed subscription configured by infrastructure.
 // Every input record is decoded through the versioned internal Kafka envelope;
-// services validate the message type they expect explicitly.
+// services validate the message type they expect explicitly. Finish each batch
+// with Commit, Rollback, or an explicit Seek before polling again.
 type KafkaConsumer interface {
+	// Rollback abandons the pending batch. With no pending batch it is a no-op.
+	Rollback(ctx context.Context) error
 	Poll(ctx context.Context) (record KafkaRecord, found bool, err error)
 	PollMany(ctx context.Context, limit int) ([]KafkaRecord, error)
 	Commit(ctx context.Context, records []KafkaRecord) error
@@ -66,9 +69,12 @@ type KafkaConsumer interface {
 
 // KafkaTransactionalConsumer is a Kafka-aware consume-produce-offset pipeline
 // backed by one consumer group and transactional producer. Complete publishes
-// output and commits every record consumed since the previous successful call.
+// output and commits the pending batch. Finish each batch with Complete,
+// Rollback, or an explicit Seek before polling again.
 type KafkaTransactionalConsumer interface {
 	WaitForAssignment(ctx context.Context) ([]KafkaPartition, error)
+	// Rollback abandons the pending batch. With no pending batch it is a no-op.
+	Rollback(ctx context.Context) error
 	Poll(ctx context.Context) (record KafkaRecord, found bool, err error)
 	PollMany(ctx context.Context, limit int) ([]KafkaRecord, error)
 	Complete(ctx context.Context, messages []OutboundKafkaMessage) error

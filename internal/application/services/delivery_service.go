@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -75,7 +76,7 @@ func NewDeliveryService(params DeliveryServiceParams) (*DeliveryService, error) 
 // Process resumes a rate-limited topic when due, then processes one processing
 // group. When permits are unavailable it seeks every polled record back and
 // pauses the whole topic before any input offset is committed.
-func (s *DeliveryService) Process(ctx context.Context) error {
+func (s *DeliveryService) Process(ctx context.Context) (err error) {
 	if s.batchSize <= 0 {
 		return fmt.Errorf("delivery batch size: %w", application.ErrValidation)
 	}
@@ -86,6 +87,11 @@ func (s *DeliveryService) Process(ctx context.Context) error {
 		}
 		s.pausedUntil = nil
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	records, err := s.kafkaConsumer.PollMany(ctx, s.batchSize)
 	if err != nil || len(records) == 0 {
 		return err

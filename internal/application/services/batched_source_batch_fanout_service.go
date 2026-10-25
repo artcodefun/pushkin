@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,7 +42,12 @@ func NewBatchedSourceBatchFanoutService(params BatchedSourceBatchFanoutServicePa
 
 // Process consumes one source-batch request and atomically emits all derived
 // delivery work records, its completion marker, and the input offset.
-func (s *BatchedSourceBatchFanoutService) Process(ctx context.Context) error {
+func (s *BatchedSourceBatchFanoutService) Process(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	record, found, err := s.kafkaConsumer.Poll(ctx)
 	if err != nil || !found {
 		return err

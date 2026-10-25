@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -29,6 +30,7 @@ type ExternalConsumerParams struct {
 // idempotent and commit an offset only after their application command
 // succeeds.
 type ExternalConsumer struct {
+	batch      pollBatch
 	client     *kgo.Client
 	inputTopic contract.Topic
 }
@@ -42,6 +44,7 @@ func NewExternalConsumer(params ExternalConsumerParams) (*ExternalConsumer, erro
 		kgo.ConsumerGroup(params.ConsumerGroup),
 		kgo.ConsumeTopics(string(params.InputTopic)),
 		kgo.DisableAutoCommit(),
+		kgo.BlockRebalanceOnPoll(),
 		kgo.FetchIsolationLevel(kgo.ReadCommitted()),
 	)
 	if err != nil {
@@ -51,16 +54,26 @@ func NewExternalConsumer(params ExternalConsumerParams) (*ExternalConsumer, erro
 }
 
 func (c *ExternalConsumer) Close() {
-	c.client.Close()
+	c.client.CloseAllowingRebalance()
 }
 
-func (c *ExternalConsumer) Poll(ctx context.Context) (ExternalRecord, bool, error) {
+func (c *ExternalConsumer) Poll(ctx context.Context) (result ExternalRecord, found bool, err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, c.Rollback(ctx))
+		}
+	}()
+	if len(c.batch.offsets) != 0 {
+		return ExternalRecord{}, false, fmt.Errorf("Kafka batch is still pending")
+	}
 	fetches := c.client.PollRecords(ctx, 1)
+	c.batch.capture(fetches.Records())
 	if err := fetches.Err(); err != nil {
 		return ExternalRecord{}, false, fmt.Errorf("poll external Kafka record: %w", err)
 	}
 	records := fetches.Records()
 	if len(records) == 0 {
+		c.batch.finish(c.client)
 		return ExternalRecord{}, false, nil
 	}
 	record := records[0]
@@ -78,5 +91,11 @@ func (c *ExternalConsumer) Commit(ctx context.Context, record ExternalRecord) er
 	if err := c.client.CommitRecords(ctx, &kgo.Record{Topic: string(c.inputTopic), Partition: record.partition, Offset: record.offset}); err != nil {
 		return fmt.Errorf("commit external Kafka record: %w", err)
 	}
+	c.batch.finish(c.client)
+	return nil
+}
+
+func (c *ExternalConsumer) Rollback(_ context.Context) error {
+	c.batch.rollback(c.client)
 	return nil
 }

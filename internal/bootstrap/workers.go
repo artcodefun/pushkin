@@ -204,7 +204,13 @@ func runUserEvents(
 	ctx context.Context,
 	consumer *infrakafka.ExternalConsumer,
 	handler *primarykafka.UserEventHandler,
-) error {
+) (err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, consumer.Rollback(ctx))
+		}
+	}()
+
 	for {
 		record, found, err := consumer.Poll(ctx)
 		if err != nil {

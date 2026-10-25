@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -87,7 +88,7 @@ func (s *CampaignProgressAggregatorService) Restore(ctx context.Context) error {
 
 // Process reduces up to BatchSize progress records. It commits output snapshots
 // and input offsets atomically, then installs the touched in-memory states.
-func (s *CampaignProgressAggregatorService) Process(ctx context.Context) error {
+func (s *CampaignProgressAggregatorService) Process(ctx context.Context) (err error) {
 	if s.batchSize <= 0 {
 		return fmt.Errorf("campaign progress batch size: %w", application.ErrValidation)
 	}
@@ -95,6 +96,11 @@ func (s *CampaignProgressAggregatorService) Process(ctx context.Context) error {
 		return fmt.Errorf("campaign progress aggregator is not restored: %w", application.ErrConflict)
 	}
 
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	records, err := s.kafkaConsumer.PollMany(ctx, s.batchSize)
 	if err != nil || len(records) == 0 {
 		return err

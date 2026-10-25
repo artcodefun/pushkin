@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -39,7 +40,12 @@ func NewInlineCampaignFanoutService(params InlineCampaignFanoutServiceParams) *I
 	}
 }
 
-func (s *InlineCampaignFanoutService) Process(ctx context.Context) error {
+func (s *InlineCampaignFanoutService) Process(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	records, err := s.kafkaConsumer.PollMany(ctx, s.batchSize)
 	if err != nil || len(records) == 0 {
 		return err

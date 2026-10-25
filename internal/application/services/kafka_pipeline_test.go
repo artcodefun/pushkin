@@ -23,3 +23,5 @@ func (kafkaPipelineControlFake) Pause(context.Context, []ports.KafkaPartition) e
 func (kafkaPipelineControlFake) Resume(context.Context, []ports.KafkaPartition) error { return nil }
 
 func (kafkaPipelineControlFake) Seek(context.Context, ports.KafkaPartitionOffsets) error { return nil }
+
+func (kafkaPipelineControlFake) Rollback(context.Context) error { return nil }

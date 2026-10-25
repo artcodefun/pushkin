@@ -35,14 +35,18 @@ type TransactionalConsumerParams struct {
 // Its methods must not be used concurrently. One runner owns one TransactionalConsumer
 // instance and calls a finite application service method sequentially.
 type TransactionalConsumer struct {
-	session    *kgo.GroupTransactSession
-	inputTopic contracts.Topic
+	batch       pollBatch
+	terminalErr error
+	session     *kgo.GroupTransactSession
+	params      TransactionalConsumerParams
+	inputTopic  contracts.Topic
 
 	assignmentMu      sync.Mutex
 	assignment        []ports.KafkaPartition
 	assignmentReady   bool
 	assignmentCancel  context.CancelFunc
 	assignmentChanges chan struct{}
+	sessionGeneration uint64
 }
 
 func NewTransactionalConsumer(params TransactionalConsumerParams) (*TransactionalConsumer, error) {
@@ -66,36 +70,92 @@ func NewTransactionalConsumer(params TransactionalConsumerParams) (*Transactiona
 	if sessionTimeout <= 0 || transactionTimeout <= 0 || transactionTimeout >= sessionTimeout {
 		return nil, fmt.Errorf("Kafka transaction timeout must be positive and less than session timeout")
 	}
+	params.Brokers = append([]string(nil), params.Brokers...)
+	params.SessionTimeout = sessionTimeout
+	params.TransactionTimeout = transactionTimeout
 
 	consumer := &TransactionalConsumer{
 		inputTopic:        params.InputTopic,
+		params:            params,
 		assignmentChanges: make(chan struct{}, 1),
 	}
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(params.Brokers...),
-		kgo.ConsumerGroup(params.ConsumerGroup),
-		kgo.TransactionalID(params.TransactionalID),
-		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.FetchIsolationLevel(kgo.ReadCommitted()),
-		kgo.DisableAutoCommit(),
-		kgo.SessionTimeout(sessionTimeout),
-		kgo.TransactionTimeout(transactionTimeout),
-		kgo.OnPartitionsAssigned(consumer.onPartitionsAssigned),
-	}
-	if params.InputTopic != "" {
-		opts = append(opts, kgo.ConsumeTopics(string(params.InputTopic)))
-	}
-
-	session, err := kgo.NewGroupTransactSession(opts...)
+	session, err := consumer.newSession()
 	if err != nil {
-		return nil, fmt.Errorf("create Kafka transaction session: %w", err)
+		return nil, err
 	}
 	consumer.session = session
 	return consumer, nil
 }
 
+func (l *TransactionalConsumer) newSession() (*kgo.GroupTransactSession, error) {
+	l.assignmentMu.Lock()
+	l.sessionGeneration++
+	generation := l.sessionGeneration
+	l.assignmentMu.Unlock()
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(l.params.Brokers...),
+		kgo.ConsumerGroup(l.params.ConsumerGroup),
+		kgo.TransactionalID(l.params.TransactionalID),
+		kgo.RequiredAcks(kgo.AllISRAcks()),
+		kgo.FetchIsolationLevel(kgo.ReadCommitted()),
+		kgo.DisableAutoCommit(),
+		kgo.BlockRebalanceOnPoll(),
+		kgo.SessionTimeout(l.params.SessionTimeout),
+		kgo.TransactionTimeout(l.params.TransactionTimeout),
+		kgo.OnPartitionsAssigned(func(ctx context.Context, client *kgo.Client, assignments map[string][]int32) {
+			l.onPartitionsAssigned(generation, ctx, client, assignments)
+		}),
+	}
+	if l.params.InputTopic != "" {
+		opts = append(opts, kgo.ConsumeTopics(string(l.params.InputTopic)))
+	}
+	session, err := kgo.NewGroupTransactSession(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create Kafka transaction session: %w", err)
+	}
+	return session, nil
+}
+
 func (l *TransactionalConsumer) Close() {
-	l.session.CloseAllowingRebalance()
+	if l.session != nil {
+		l.session.CloseAllowingRebalance()
+	}
+}
+
+// recreate replaces a transactional session after franz-go reports an error
+// that leaves it unsafe to reuse. The consumer is used sequentially by one
+// worker, so no operation is in flight while it is replaced.
+func (l *TransactionalConsumer) recreate() error {
+	oldSession := l.session
+	l.assignmentMu.Lock()
+	l.assignment = nil
+	l.assignmentReady = false
+	if l.assignmentCancel != nil {
+		l.assignmentCancel()
+		l.assignmentCancel = nil
+	}
+	l.assignmentMu.Unlock()
+	if oldSession != nil {
+		oldSession.CloseAllowingRebalance()
+	}
+	session, err := l.newSession()
+	if err != nil {
+		return err
+	}
+	l.session = session
+	l.batch = pollBatch{}
+	l.terminalErr = nil
+	return nil
+}
+
+func (l *TransactionalConsumer) recreateIfTerminal() error {
+	if l.terminalErr == nil {
+		return nil
+	}
+	if err := l.recreate(); err != nil {
+		return fmt.Errorf("recreate Kafka transactional consumer: %w", err)
+	}
+	return nil
 }
 
 // WaitForAssignment triggers the initial consumer-group join and returns the
@@ -103,6 +163,9 @@ func (l *TransactionalConsumer) Close() {
 // bootstrap poll receives records while assignment is established, it rewinds
 // them so application processing sees them on its first normal poll.
 func (l *TransactionalConsumer) WaitForAssignment(ctx context.Context) ([]ports.KafkaPartition, error) {
+	if err := l.recreateIfTerminal(); err != nil {
+		return nil, err
+	}
 	l.assignmentMu.Lock()
 	if l.assignmentReady {
 		assignment := append([]ports.KafkaPartition(nil), l.assignment...)
@@ -151,7 +214,7 @@ func (l *TransactionalConsumer) WaitForAssignment(ctx context.Context) ([]ports.
 	return nil, fmt.Errorf("Kafka assignment was not established")
 }
 
-func (l *TransactionalConsumer) onPartitionsAssigned(_ context.Context, _ *kgo.Client, assignments map[string][]int32) {
+func (l *TransactionalConsumer) onPartitionsAssigned(generation uint64, _ context.Context, _ *kgo.Client, assignments map[string][]int32) {
 	partitions := assignments[string(l.inputTopic)]
 	assignment := make([]ports.KafkaPartition, 0, len(partitions))
 	for _, partition := range partitions {
@@ -159,6 +222,10 @@ func (l *TransactionalConsumer) onPartitionsAssigned(_ context.Context, _ *kgo.C
 	}
 
 	l.assignmentMu.Lock()
+	if generation != l.sessionGeneration {
+		l.assignmentMu.Unlock()
+		return
+	}
 	wasAssigned := l.assignmentReady
 	l.assignment = assignment
 	l.assignmentReady = true
@@ -192,12 +259,27 @@ func (l *TransactionalConsumer) Poll(ctx context.Context) (ports.KafkaRecord, bo
 	return records[0], true, nil
 }
 
-func (l *TransactionalConsumer) PollMany(ctx context.Context, limit int) ([]ports.KafkaRecord, error) {
+func (l *TransactionalConsumer) PollMany(ctx context.Context, limit int) (result []ports.KafkaRecord, err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, l.Rollback(ctx))
+		}
+	}()
+	if err := l.recreateIfTerminal(); err != nil {
+		return nil, err
+	}
 	if limit <= 0 {
 		return nil, fmt.Errorf("Kafka poll limit must be positive")
 	}
 
+	if len(l.batch.offsets) != 0 {
+		return nil, fmt.Errorf("Kafka batch is still pending")
+	}
 	fetches := l.session.PollRecords(ctx, limit)
+	l.batch.capture(fetches.Records())
+	if len(fetches.Records()) == 0 {
+		l.batch.finish(l.session.Client())
+	}
 	if err := fetches.Err(); err != nil {
 		return nil, fmt.Errorf("poll Kafka records: %w", err)
 	}
@@ -221,25 +303,48 @@ func (l *TransactionalConsumer) PollMany(ctx context.Context, limit int) ([]port
 }
 
 func (l *TransactionalConsumer) Complete(ctx context.Context, messages []ports.OutboundKafkaMessage) error {
+	if l.terminalErr != nil {
+		return fmt.Errorf("Kafka transactional consumer is unavailable: %w", l.terminalErr)
+	}
 	if err := l.session.Begin(); err != nil {
+		l.terminalErr = err
 		return fmt.Errorf("begin Kafka transaction: %w", err)
 	}
 	if err := produce(ctx, l.session.ProduceSync, messages); err != nil {
 		if _, abortErr := l.session.End(ctx, kgo.TryAbort); abortErr != nil {
+			l.terminalErr = abortErr
 			return fmt.Errorf("Kafka transaction failed: %w", errors.Join(err, abortErr))
+		}
+		var brokerErr *brokerProduceError
+		if errors.As(err, &brokerErr) {
+			l.terminalErr = err
 		}
 		return err
 	}
 
 	committed, err := l.session.End(ctx, kgo.TryCommit)
 	if err != nil {
+		l.terminalErr = err
 		return fmt.Errorf("commit Kafka transaction: %w", err)
 	}
 	if !committed {
-		return fmt.Errorf("Kafka transaction aborted before commit")
+		l.terminalErr = errors.New("Kafka transaction aborted before commit")
+		return l.terminalErr
 	}
+	l.batch.finish(l.session.Client())
 	return nil
 }
+
+// brokerProduceError distinguishes a Kafka broker failure from local output
+// validation. A broker failure can fence a transactional producer; local
+// validation cannot, and the successfully aborted session remains reusable.
+type brokerProduceError struct {
+	err error
+}
+
+func (e *brokerProduceError) Error() string { return e.err.Error() }
+
+func (e *brokerProduceError) Unwrap() error { return e.err }
 
 func produce(ctx context.Context, produceSync func(context.Context, ...*kgo.Record) kgo.ProduceResults, messages []ports.OutboundKafkaMessage) error {
 	if len(messages) == 0 {
@@ -257,7 +362,7 @@ func produce(ctx context.Context, produceSync func(context.Context, ...*kgo.Reco
 		records = append(records, &kgo.Record{Topic: string(message.Topic), Key: message.Key, Value: value})
 	}
 	if err := produceSync(ctx, records...).FirstErr(); err != nil {
-		return fmt.Errorf("produce Kafka messages: %w", err)
+		return fmt.Errorf("produce Kafka messages: %w", &brokerProduceError{err: err})
 	}
 	return nil
 }
@@ -298,7 +403,7 @@ func (l *TransactionalConsumer) Seek(_ context.Context, offsets ports.KafkaParti
 		}
 		partitions[partition.Partition] = kgo.EpochOffset{Offset: offset}
 	}
-	l.session.Client().SetOffsets(positions)
+	l.batch.seek(l.session.Client(), positions)
 	return nil
 }
 
@@ -308,4 +413,12 @@ func kgoPartitions(partitions []ports.KafkaPartition) map[string][]int32 {
 		result[string(partition.Topic)] = append(result[string(partition.Topic)], partition.Partition)
 	}
 	return result
+}
+
+func (l *TransactionalConsumer) Rollback(_ context.Context) error {
+	if l.terminalErr != nil {
+		return fmt.Errorf("rollback Kafka transaction: %w", l.terminalErr)
+	}
+	l.batch.rollback(l.session.Client())
+	return nil
 }

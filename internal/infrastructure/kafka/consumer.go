@@ -13,6 +13,7 @@ import (
 )
 
 type Consumer struct {
+	batch      pollBatch
 	client     *kgo.Client
 	inputTopic contracts.Topic
 }
@@ -32,6 +33,7 @@ func NewConsumer(params ConsumerParams) (*Consumer, error) {
 		kgo.ConsumerGroup(params.ConsumerGroup),
 		kgo.ConsumeTopics(string(params.InputTopic)),
 		kgo.DisableAutoCommit(),
+		kgo.BlockRebalanceOnPoll(),
 		kgo.FetchIsolationLevel(kgo.ReadCommitted()),
 	)
 	if err != nil {
@@ -40,7 +42,7 @@ func NewConsumer(params ConsumerParams) (*Consumer, error) {
 	return &Consumer{client: client, inputTopic: params.InputTopic}, nil
 }
 
-func (c *Consumer) Close() { c.client.Close() }
+func (c *Consumer) Close() { c.client.CloseAllowingRebalance() }
 
 func (c *Consumer) Poll(ctx context.Context) (ports.KafkaRecord, bool, error) {
 	records, err := c.PollMany(ctx, 1)
@@ -50,16 +52,29 @@ func (c *Consumer) Poll(ctx context.Context) (ports.KafkaRecord, bool, error) {
 	return records[0], true, nil
 }
 
-func (c *Consumer) PollMany(ctx context.Context, limit int) ([]ports.KafkaRecord, error) {
+func (c *Consumer) PollMany(ctx context.Context, limit int) (result []ports.KafkaRecord, err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, c.Rollback(ctx))
+		}
+	}()
 	if limit <= 0 {
 		return nil, fmt.Errorf("Kafka poll limit must be positive")
 	}
+	if len(c.batch.offsets) != 0 {
+		return nil, fmt.Errorf("Kafka batch is still pending")
+	}
 	fetches := c.client.PollRecords(ctx, limit)
+	c.batch.capture(fetches.Records())
+	if len(fetches.Records()) == 0 {
+		c.batch.finish(c.client)
+	}
 	if err := fetches.Err(); err != nil {
 		if c.inputTopic == contracts.TopicCampaignStats && isKafkaDataLoss(err) {
 			// Campaign stats are absolute snapshots. Franz-go has already reset
 			// its cursor to the earliest retained offset, so a later poll can
 			// safely resume materializing the current state.
+			c.batch.rollback(c.client)
 			return nil, nil
 		}
 		return nil, fmt.Errorf("poll Kafka records: %w", err)
@@ -97,6 +112,7 @@ func (c *Consumer) Commit(ctx context.Context, records []ports.KafkaRecord) erro
 	if err := c.client.CommitRecords(ctx, kgoRecords...); err != nil {
 		return fmt.Errorf("commit Kafka records: %w", err)
 	}
+	c.batch.finish(c.client)
 	return nil
 }
 
@@ -111,7 +127,7 @@ func (c *Consumer) Resume(_ context.Context, partitions []ports.KafkaPartition) 
 }
 
 func (c *Consumer) Seek(_ context.Context, offsets ports.KafkaPartitionOffsets) error {
-	c.client.SetOffsets(kgoOffsets(offsets))
+	c.batch.seek(c.client, kgoOffsets(offsets))
 	return nil
 }
 
@@ -126,4 +142,9 @@ func kgoOffsets(offsets ports.KafkaPartitionOffsets) map[string]map[int32]kgo.Ep
 		partitions[partition.Partition] = kgo.EpochOffset{Offset: offset}
 	}
 	return positions
+}
+
+func (c *Consumer) Rollback(_ context.Context) error {
+	c.batch.rollback(c.client)
+	return nil
 }

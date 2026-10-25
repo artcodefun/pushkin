@@ -311,3 +311,5 @@ func (c *deliveryPartitionController) Seek(_ context.Context, offsets ports.Kafk
 	c.seekOffsets = offsets
 	return nil
 }
+
+func (*deliveryPartitionController) Rollback(context.Context) error { return nil }

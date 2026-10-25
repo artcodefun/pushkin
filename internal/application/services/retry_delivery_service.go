@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -69,12 +70,17 @@ func NewRetryDeliveryService(params RetryDeliveryServiceParams) (*RetryDeliveryS
 
 // Process resumes due partitions, then processes one retry record. A future
 // record is sought back and its partition is paused before any offset commit.
-func (s *RetryDeliveryService) Process(ctx context.Context) error {
+func (s *RetryDeliveryService) Process(ctx context.Context) (err error) {
 	now := time.Now().UTC()
 	if err := s.resumeDuePartitions(ctx, now); err != nil {
 		return err
 	}
 
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	record, found, err := s.kafkaConsumer.Poll(ctx)
 	if err != nil || !found {
 		return err

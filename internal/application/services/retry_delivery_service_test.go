@@ -223,3 +223,5 @@ func (c *retryPartitionController) Seek(_ context.Context, offsets ports.KafkaPa
 	c.seekOffsets = offsets
 	return nil
 }
+
+func (*retryPartitionController) Rollback(context.Context) error { return nil }

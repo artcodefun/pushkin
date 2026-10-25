@@ -39,7 +39,12 @@ func NewBatchedCampaignRunCoordinatorService(
 
 // Process consumes one CampaignRunRequestedV1 record and atomically emits
 // its fan-out records with the consumed offsets in one Kafka transaction.
-func (s *BatchedCampaignRunCoordinatorService) Process(ctx context.Context) error {
+func (s *BatchedCampaignRunCoordinatorService) Process(ctx context.Context) (err error) {
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.kafkaConsumer.Rollback(ctx))
+		}
+	}()
 	record, found, err := s.kafkaConsumer.Poll(ctx)
 	if err != nil {
 		return err

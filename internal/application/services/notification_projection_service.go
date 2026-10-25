@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,10 +33,15 @@ func NewNotificationProjectionService(params NotificationProjectionServiceParams
 	return &NotificationProjectionService{notifications: params.Notifications, consumer: params.KafkaConsumer, batchSize: params.BatchSize}
 }
 
-func (s *NotificationProjectionService) Process(ctx context.Context) error {
+func (s *NotificationProjectionService) Process(ctx context.Context) (err error) {
 	if s.batchSize <= 0 {
 		return fmt.Errorf("notification projection batch size: %w", application.ErrValidation)
 	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, s.consumer.Rollback(ctx))
+		}
+	}()
 	records, err := s.consumer.PollMany(ctx, s.batchSize)
 	if err != nil || len(records) == 0 {
 		return err
