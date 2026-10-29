@@ -28,11 +28,12 @@ run_id="${scenario}-$(date -u +%Y%m%dT%H%M%SZ)"
 run_results_dir="$results_dir/$run_id"
 mkdir -p "$run_results_dir"
 
-echo "==> Provisioning Yandex Cloud environment"
+echo "==> Provisioning Google Cloud environment"
 terraform -chdir="$terraform_dir" init
 terraform -chdir="$terraform_dir" apply -auto-approve
 
 pushkin_ip="$(terraform -chdir="$terraform_dir" output -json pushkin | jq -r '.public_ip')"
+pushkin_private_ip="$(terraform -chdir="$terraform_dir" output -json pushkin | jq -r '.private_ip')"
 fake_fcm_ip="$(terraform -chdir="$terraform_dir" output -json fake_fcm | jq -r '.public_ip')"
 fake_fcm_private_ip="$(terraform -chdir="$terraform_dir" output -json fake_fcm | jq -r '.private_ip')"
 
@@ -101,8 +102,9 @@ echo "==> Starting resource monitor"
 bash "$monitor" \
   --output "$metrics_output" \
   --summary "$metrics_summary" \
-  --host "pushkin=$pushkin_ip" \
-  --host "fake-fcm=$fake_fcm_ip" &
+  --bastion "$pushkin_ip" \
+  --host "pushkin=$pushkin_private_ip" \
+  --host "fake-fcm=$fake_fcm_private_ip" &
 monitor_pid=$!
 
 echo "==> Starting scenario $scenario"
@@ -116,7 +118,8 @@ BENCHMARK_RESULTS_DIR="$run_results_dir" \
 
 echo "==> Collecting final Kafka topic lag"
 bash "$topic_lag" \
-  --host "$pushkin_ip" \
+  --bastion "$pushkin_ip" \
+  --host "$pushkin_private_ip" \
   --compose-file /opt/pushkin-benchmark/pushkin.compose.yml \
   --output "$run_results_dir/topic-lags.json"
 cat "$run_results_dir/topic-lags.json"

@@ -9,119 +9,109 @@ locals {
   ssh_key = trimspace(file(var.ssh_public_key_path))
 }
 
-data "yandex_compute_image" "ubuntu" {
-  family = var.image_family
+data "google_compute_image" "ubuntu" {
+  family  = var.image_family
+  project = "ubuntu-os-cloud"
 }
 
-resource "yandex_vpc_network" "benchmark" {
-  name   = "${local.name_prefix}-network"
-  labels = local.labels
+resource "google_compute_network" "benchmark" {
+  name                    = "${local.name_prefix}-network"
+  auto_create_subnetworks = false
 }
 
-resource "yandex_vpc_subnet" "benchmark" {
-  name           = "${local.name_prefix}-subnet"
-  zone           = var.zone
-  network_id     = yandex_vpc_network.benchmark.id
-  v4_cidr_blocks = ["10.130.0.0/24"]
-  labels         = local.labels
+resource "google_compute_subnetwork" "benchmark" {
+  name          = "${local.name_prefix}-subnet"
+  ip_cidr_range = "10.130.0.0/24"
+  network       = google_compute_network.benchmark.id
+  region        = var.region
 }
 
-resource "yandex_vpc_security_group" "pushkin" {
-  name       = "${local.name_prefix}-pushkin"
-  network_id = yandex_vpc_network.benchmark.id
-  labels     = local.labels
+resource "google_compute_firewall" "internal" {
+  name          = "${local.name_prefix}-internal"
+  network       = google_compute_network.benchmark.name
+  source_ranges = [google_compute_subnetwork.benchmark.ip_cidr_range]
 
-  ingress {
-    protocol       = "TCP"
-    v4_cidr_blocks = [var.ssh_allowed_cidr]
-    port           = 22
-  }
-
-  egress {
-    protocol       = "ANY"
-    v4_cidr_blocks = ["0.0.0.0/0"]
+  allow {
+    protocol = "all"
   }
 }
 
-resource "yandex_vpc_security_group" "fake_fcm" {
-  name       = "${local.name_prefix}-fake-fcm"
-  network_id = yandex_vpc_network.benchmark.id
-  labels     = local.labels
+resource "google_compute_firewall" "ssh" {
+  name          = "${local.name_prefix}-ssh"
+  network       = google_compute_network.benchmark.name
+  direction     = "INGRESS"
+  source_ranges = [var.ssh_allowed_cidr]
+  target_tags   = ["pushkin-benchmark-node"]
 
-  ingress {
-    protocol       = "TCP"
-    v4_cidr_blocks = [var.ssh_allowed_cidr]
-    port           = 22
-  }
-
-  ingress {
-    protocol       = "TCP"
-    v4_cidr_blocks = yandex_vpc_subnet.benchmark.v4_cidr_blocks
-    port           = 8081
-  }
-
-  egress {
-    protocol       = "ANY"
-    v4_cidr_blocks = ["0.0.0.0/0"]
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
   }
 }
 
-resource "yandex_compute_instance" "pushkin" {
-  name        = "${local.name_prefix}-pushkin"
-  platform_id = "standard-v3"
-  zone        = var.zone
-  labels      = local.labels
-
-  resources {
-    cores  = var.pushkin_cores
-    memory = var.pushkin_memory_gb
-  }
-
-  scheduling_policy { preemptible = var.preemptible }
+resource "google_compute_instance" "pushkin" {
+  name         = "${local.name_prefix}-pushkin"
+  machine_type = var.pushkin_machine_type
+  zone         = var.zone
+  labels       = local.labels
+  tags         = ["pushkin-benchmark-node", "pushkin-benchmark-bastion"]
 
   boot_disk {
     initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = 40
-      type     = "network-ssd"
+      image = data.google_compute_image.ubuntu.self_link
+      size  = var.pushkin_boot_disk_gb
+      type  = "pd-balanced"
     }
   }
 
   network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.pushkin.id]
-    nat                = true
+    subnetwork = google_compute_subnetwork.benchmark.id
+    access_config {}
   }
 
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
+  metadata = {
+    ssh-keys = "ubuntu:${local.ssh_key}"
+  }
+
+  scheduling {
+    automatic_restart           = !var.spot
+    instance_termination_action = var.spot ? "STOP" : null
+    preemptible                 = var.spot
+    provisioning_model          = var.spot ? "SPOT" : "STANDARD"
+  }
 }
 
-resource "yandex_compute_instance" "fake_fcm" {
-  name        = "${local.name_prefix}-fake-fcm"
-  platform_id = "standard-v3"
-  zone        = var.zone
-  labels      = local.labels
-
-  resources {
-    cores  = var.fake_fcm_cores
-    memory = var.fake_fcm_memory_gb
-  }
-
-  scheduling_policy { preemptible = var.preemptible }
+resource "google_compute_instance" "fake_fcm" {
+  name         = "${local.name_prefix}-fake-fcm"
+  machine_type = var.fake_fcm_machine_type
+  zone         = var.zone
+  labels       = local.labels
+  tags         = ["pushkin-benchmark-node"]
 
   boot_disk {
     initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = 20
-      type     = "network-ssd"
+      image = data.google_compute_image.ubuntu.self_link
+      size  = var.fake_fcm_boot_disk_gb
+      type  = "pd-balanced"
     }
   }
 
   network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.fake_fcm.id]
-    nat                = true
+    subnetwork = google_compute_subnetwork.benchmark.id
+
+    # This VM needs package and container-image downloads. In this disposable
+    # benchmark topology the firewall still blocks all external ingress.
+    access_config {}
   }
 
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
+  metadata = {
+    ssh-keys = "ubuntu:${local.ssh_key}"
+  }
+
+  scheduling {
+    automatic_restart           = !var.spot
+    instance_termination_action = var.spot ? "STOP" : null
+    preemptible                 = var.spot
+    provisioning_model          = var.spot ? "SPOT" : "STANDARD"
+  }
 }

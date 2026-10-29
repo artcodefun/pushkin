@@ -1,7 +1,18 @@
+variable "project_id" {
+  type        = string
+  description = "Google Cloud project ID that owns this disposable benchmark environment."
+}
+
+variable "region" {
+  type        = string
+  description = "Google Cloud region that owns the benchmark subnet."
+  default     = "europe-west1"
+}
+
 variable "zone" {
   type        = string
-  description = "Yandex Cloud availability zone for all benchmark VMs."
-  default     = "ru-central1-a"
+  description = "Google Cloud zone for all benchmark VMs."
+  default     = "europe-west1-b"
 }
 
 variable "ssh_public_key_path" {
@@ -16,8 +27,8 @@ variable "ssh_allowed_cidr" {
 
 variable "image_family" {
   type        = string
-  description = "Yandex Cloud public image family."
-  default     = "ubuntu-2404-lts"
+  description = "Ubuntu public image family."
+  default     = "ubuntu-2404-lts-amd64"
 }
 
 variable "pushkin_instance_count" {
@@ -31,14 +42,9 @@ variable "pushkin_instance_count" {
   }
 }
 
-variable "pushkin_cores" {
-  type    = number
-  default = 6
-}
-
-variable "pushkin_memory_gb" {
-  type    = number
-  default = 12
+variable "pushkin_machine_type" {
+  type    = string
+  default = "n2-custom-6-12288"
 }
 
 variable "pushkin_boot_disk_gb" {
@@ -46,14 +52,9 @@ variable "pushkin_boot_disk_gb" {
   default = 20
 }
 
-variable "kafka_cores" {
-  type    = number
-  default = 6
-}
-
-variable "kafka_memory_gb" {
-  type    = number
-  default = 12
+variable "kafka_machine_type" {
+  type    = string
+  default = "n2-custom-6-12288"
 }
 
 variable "kafka_boot_disk_gb" {
@@ -61,14 +62,9 @@ variable "kafka_boot_disk_gb" {
   default = 30
 }
 
-variable "postgres_cores" {
-  type    = number
-  default = 6
-}
-
-variable "postgres_memory_gb" {
-  type    = number
-  default = 12
+variable "postgres_machine_type" {
+  type    = string
+  default = "n2-custom-6-12288"
 }
 
 variable "postgres_boot_disk_gb" {
@@ -76,14 +72,9 @@ variable "postgres_boot_disk_gb" {
   default = 30
 }
 
-variable "cassandra_cores" {
-  type    = number
-  default = 6
-}
-
-variable "cassandra_memory_gb" {
-  type    = number
-  default = 12
+variable "cassandra_machine_type" {
+  type    = string
+  default = "n2-custom-6-12288"
 }
 
 variable "cassandra_boot_disk_gb" {
@@ -91,14 +82,9 @@ variable "cassandra_boot_disk_gb" {
   default = 30
 }
 
-variable "fake_fcm_cores" {
-  type    = number
-  default = 6
-}
-
-variable "fake_fcm_memory_gb" {
-  type    = number
-  default = 12
+variable "fake_fcm_machine_type" {
+  type    = string
+  default = "n2-custom-6-12288"
 }
 
 variable "fake_fcm_boot_disk_gb" {
@@ -106,8 +92,8 @@ variable "fake_fcm_boot_disk_gb" {
   default = 20
 }
 
-variable "preemptible" {
+variable "spot" {
   type        = bool
-  description = "Allow Yandex Cloud to reclaim VMs. Keep false for stable benchmark runs."
+  description = "Use interruptible Spot VMs. Keep false for a stable comparison run."
   default     = false
 }

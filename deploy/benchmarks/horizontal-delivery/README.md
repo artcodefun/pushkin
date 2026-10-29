@@ -1,16 +1,16 @@
 # Horizontal delivery benchmark
 
 This experiment runs four Pushkin instances sharing Kafka consumer groups. The
-first Pushkin VM is the only public SSH bastion; every other VM is private and
-is reached through it. Kafka, PostgreSQL with Redis, Cassandra, and Fake FCM
+first Pushkin VM is the only host that permits SSH from the operator; every
+other VM is reached through it over private addresses. Kafka, PostgreSQL with
+Redis, Cassandra, and Fake FCM
 each run on their own VM, so database and broker contention can be measured
 separately from Pushkin.
 
 The default shape uses 48 vCPU and 190 GB of network SSD: four 6-vCPU
-Pushkin VMs plus four 6-vCPU service VMs. Every VM uses 12 GB of memory, which
-is a supported size for six cores on this platform. PostgreSQL/Redis and Fake
-FCM each therefore receive six cores rather than competing with Kafka or
-Cassandra on a shared host.
+Pushkin VMs plus four 6-vCPU service VMs. Every VM uses 12 GB of memory.
+PostgreSQL/Redis and Fake FCM each receive dedicated resources rather than
+competing with Kafka or Cassandra on a shared host.
 
 Kafka topics use four partitions in the application. This matches the four
 Pushkin instances in the benchmark. Partition count is an immutable
@@ -19,17 +19,20 @@ recreates Kafka from an empty volume.
 
 ## Prerequisites
 
-- Terraform 1.6+, authenticated Yandex Cloud CLI, and an SSH public key.
+- Terraform 1.6+, Google Cloud CLI (`gcloud`), and an SSH public key.
 - Ansible Core 2.21+ available as `ansible` and `ansible-playbook`.
 - SSH and `jq` on the operator machine.
 
-Set the normal Yandex Cloud environment variables; do not place tokens in this
-repository:
+Select the dedicated Google Cloud project, enable Compute Engine, and create
+Application Default Credentials for Terraform. The credentials stay in the
+local Google Cloud CLI configuration; do not place a service-account key or
+token in this repository:
 
 ```bash
-export YC_TOKEN="$(yc iam create-token)"
-export YC_CLOUD_ID="$(yc config get cloud-id)"
-export YC_FOLDER_ID="$(yc config get folder-id)"
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable compute.googleapis.com
+gcloud auth application-default login
 ```
 
 Create local Terraform variables:
@@ -37,9 +40,23 @@ Create local Terraform variables:
 ```bash
 cd deploy/benchmarks/horizontal-delivery/terraform
 cp terraform.tfvars.example terraform.tfvars
-terraform init
+terraform init -reconfigure
 terraform apply
 ```
+
+Google Cloud uses the separate ignored `google-cloud.tfstate` file; do not
+migrate the former Yandex Cloud state into it. Destroy any still-needed Yandex
+resources from a checkout containing the former configuration before removing
+its state.
+
+The default VM sizes reproduce the prior 48-vCPU topology. Set `spot = true`
+in `terraform.tfvars` only for exploratory runs: Google can stop a Spot VM at
+any time.
+
+Every VM receives an ephemeral external IP for package and container-image
+downloads, avoiding a separately billed Cloud NAT gateway. The firewall permits
+external SSH only to the bastion; Ansible reaches all other hosts over their
+private addresses through that bastion.
 
 ## Run
 

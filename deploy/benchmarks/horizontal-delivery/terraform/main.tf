@@ -7,225 +7,111 @@ locals {
     managed_by  = "terraform"
   }
   ssh_key = trimspace(file(var.ssh_public_key_path))
+
+  pushkin_nodes = {
+    for number in range(var.pushkin_instance_count) : "pushkin-${number + 1}" => {
+      machine_type = var.pushkin_machine_type
+      boot_disk_gb = var.pushkin_boot_disk_gb
+      bastion      = number == 0
+    }
+  }
+  service_nodes = {
+    kafka = {
+      machine_type = var.kafka_machine_type
+      boot_disk_gb = var.kafka_boot_disk_gb
+      bastion      = false
+    }
+    postgres = {
+      machine_type = var.postgres_machine_type
+      boot_disk_gb = var.postgres_boot_disk_gb
+      bastion      = false
+    }
+    cassandra = {
+      machine_type = var.cassandra_machine_type
+      boot_disk_gb = var.cassandra_boot_disk_gb
+      bastion      = false
+    }
+    fake-fcm = {
+      machine_type = var.fake_fcm_machine_type
+      boot_disk_gb = var.fake_fcm_boot_disk_gb
+      bastion      = false
+    }
+  }
+  nodes = merge(local.pushkin_nodes, local.service_nodes)
 }
 
-data "yandex_compute_image" "ubuntu" {
-  family = var.image_family
+data "google_compute_image" "ubuntu" {
+  family  = var.image_family
+  project = "ubuntu-os-cloud"
 }
 
-resource "yandex_vpc_network" "benchmark" {
-  name   = "${local.name_prefix}-network"
-  labels = local.labels
+resource "google_compute_network" "benchmark" {
+  name                    = "${local.name_prefix}-network"
+  auto_create_subnetworks = false
 }
 
-resource "yandex_vpc_gateway" "egress" {
-  name = "${local.name_prefix}-egress"
-
-  shared_egress_gateway {}
+resource "google_compute_subnetwork" "benchmark" {
+  name          = "${local.name_prefix}-subnet"
+  ip_cidr_range = "10.129.0.0/24"
+  network       = google_compute_network.benchmark.id
+  region        = var.region
 }
 
-resource "yandex_vpc_route_table" "benchmark" {
-  name       = "${local.name_prefix}-routes"
-  network_id = yandex_vpc_network.benchmark.id
+resource "google_compute_firewall" "internal" {
+  name          = "${local.name_prefix}-internal"
+  network       = google_compute_network.benchmark.name
+  source_ranges = [google_compute_subnetwork.benchmark.ip_cidr_range]
 
-  static_route {
-    destination_prefix = "0.0.0.0/0"
-    gateway_id         = yandex_vpc_gateway.egress.id
+  allow {
+    protocol = "all"
   }
 }
 
-resource "yandex_vpc_subnet" "benchmark" {
-  name           = "${local.name_prefix}-subnet"
-  zone           = var.zone
-  network_id     = yandex_vpc_network.benchmark.id
-  v4_cidr_blocks = ["10.129.0.0/24"]
-  route_table_id = yandex_vpc_route_table.benchmark.id
-  labels         = local.labels
-}
+resource "google_compute_firewall" "ssh" {
+  name          = "${local.name_prefix}-ssh"
+  network       = google_compute_network.benchmark.name
+  direction     = "INGRESS"
+  source_ranges = [var.ssh_allowed_cidr]
+  target_tags   = ["pushkin-benchmark-bastion"]
 
-resource "yandex_vpc_security_group" "benchmark" {
-  name       = "${local.name_prefix}-nodes"
-  network_id = yandex_vpc_network.benchmark.id
-  labels     = local.labels
-
-  ingress {
-    protocol       = "ANY"
-    description    = "Traffic between benchmark nodes"
-    v4_cidr_blocks = yandex_vpc_subnet.benchmark.v4_cidr_blocks
-  }
-
-  ingress {
-    protocol       = "TCP"
-    description    = "SSH from the benchmark operator to the bastion"
-    v4_cidr_blocks = [var.ssh_allowed_cidr]
-    port           = 22
-  }
-
-  egress {
-    protocol       = "ANY"
-    description    = "Package downloads, container images, and diagnostics"
-    v4_cidr_blocks = ["0.0.0.0/0"]
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
   }
 }
 
-resource "yandex_compute_instance" "pushkin" {
-  count                     = var.pushkin_instance_count
-  name                      = "${local.name_prefix}-pushkin-${count.index + 1}"
-  platform_id               = "standard-v3"
-  zone                      = var.zone
-  labels                    = local.labels
-  allow_stopping_for_update = true
-
-  resources {
-    cores  = var.pushkin_cores
-    memory = var.pushkin_memory_gb
-  }
-
-  scheduling_policy {
-    preemptible = var.preemptible
-  }
+resource "google_compute_instance" "node" {
+  for_each     = local.nodes
+  name         = "${local.name_prefix}-${each.key}"
+  machine_type = each.value.machine_type
+  zone         = var.zone
+  labels       = local.labels
+  tags         = each.value.bastion ? ["pushkin-benchmark-node", "pushkin-benchmark-bastion"] : ["pushkin-benchmark-node"]
 
   boot_disk {
     initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = var.pushkin_boot_disk_gb
-      type     = "network-ssd"
+      image = data.google_compute_image.ubuntu.self_link
+      size  = each.value.boot_disk_gb
+      type  = "pd-balanced"
     }
   }
 
   network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.benchmark.id]
-    nat                = count.index == 0
+    subnetwork = google_compute_subnetwork.benchmark.id
+
+    # Each node needs outbound package and image downloads. Firewall rules still
+    # deny every external ingress connection except SSH to the bastion.
+    access_config {}
   }
 
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
-}
-
-resource "yandex_compute_instance" "kafka" {
-  name                      = "${local.name_prefix}-kafka"
-  platform_id               = "standard-v3"
-  zone                      = var.zone
-  labels                    = local.labels
-  allow_stopping_for_update = true
-
-  resources {
-    cores  = var.kafka_cores
-    memory = var.kafka_memory_gb
+  metadata = {
+    ssh-keys = "ubuntu:${local.ssh_key}"
   }
 
-  scheduling_policy {
-    preemptible = var.preemptible
+  scheduling {
+    automatic_restart           = !var.spot
+    instance_termination_action = var.spot ? "STOP" : null
+    preemptible                 = var.spot
+    provisioning_model          = var.spot ? "SPOT" : "STANDARD"
   }
-
-  boot_disk {
-    initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = var.kafka_boot_disk_gb
-      type     = "network-ssd"
-    }
-  }
-
-  network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.benchmark.id]
-  }
-
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
-}
-
-resource "yandex_compute_instance" "postgres" {
-  name                      = "${local.name_prefix}-postgres"
-  platform_id               = "standard-v3"
-  zone                      = var.zone
-  labels                    = local.labels
-  allow_stopping_for_update = true
-
-  resources {
-    cores  = var.postgres_cores
-    memory = var.postgres_memory_gb
-  }
-
-  scheduling_policy {
-    preemptible = var.preemptible
-  }
-
-  boot_disk {
-    initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = var.postgres_boot_disk_gb
-      type     = "network-ssd"
-    }
-  }
-
-  network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.benchmark.id]
-  }
-
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
-}
-
-resource "yandex_compute_instance" "cassandra" {
-  name                      = "${local.name_prefix}-cassandra"
-  platform_id               = "standard-v3"
-  zone                      = var.zone
-  labels                    = local.labels
-  allow_stopping_for_update = true
-
-  resources {
-    cores  = var.cassandra_cores
-    memory = var.cassandra_memory_gb
-  }
-
-  scheduling_policy {
-    preemptible = var.preemptible
-  }
-
-  boot_disk {
-    initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = var.cassandra_boot_disk_gb
-      type     = "network-ssd"
-    }
-  }
-
-  network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.benchmark.id]
-  }
-
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
-}
-
-resource "yandex_compute_instance" "fake_fcm" {
-  name                      = "${local.name_prefix}-fake-fcm"
-  platform_id               = "standard-v3"
-  zone                      = var.zone
-  labels                    = local.labels
-  allow_stopping_for_update = true
-
-  resources {
-    cores  = var.fake_fcm_cores
-    memory = var.fake_fcm_memory_gb
-  }
-
-  scheduling_policy {
-    preemptible = var.preemptible
-  }
-
-  boot_disk {
-    initialize_params {
-      image_id = data.yandex_compute_image.ubuntu.id
-      size     = var.fake_fcm_boot_disk_gb
-      type     = "network-ssd"
-    }
-  }
-
-  network_interface {
-    subnet_id          = yandex_vpc_subnet.benchmark.id
-    security_group_ids = [yandex_vpc_security_group.benchmark.id]
-  }
-
-  metadata = { ssh-keys = "ubuntu:${local.ssh_key}" }
 }

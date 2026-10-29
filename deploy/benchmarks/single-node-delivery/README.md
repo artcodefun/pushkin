@@ -9,17 +9,20 @@ both HTTP campaign submission and subsequent end-to-end delivery to Fake FCM.
 
 ## Prerequisites
 
-- Terraform 1.6+, authenticated Yandex Cloud CLI, and an SSH public key.
+- Terraform 1.6+, Google Cloud CLI (`gcloud`), and an SSH public key.
 - Ansible Core 2.21+ available as `ansible-playbook`.
 - Go, SSH, `curl`, and `jq` on the operator machine.
 
-Set the normal Yandex Cloud environment variables; do not put tokens in this
-repository:
+Select the dedicated Google Cloud project, enable Compute Engine, and create
+Application Default Credentials for Terraform. The credentials stay in the
+local Google Cloud CLI configuration; do not place a service-account key or
+token in this repository:
 
 ```bash
-export YC_TOKEN="$(yc iam create-token)"
-export YC_CLOUD_ID="$(yc config get cloud-id)"
-export YC_FOLDER_ID="$(yc config get folder-id)"
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud services enable compute.googleapis.com
+gcloud auth application-default login
 ```
 
 Create local Terraform variables:
@@ -27,7 +30,23 @@ Create local Terraform variables:
 ```bash
 cd deploy/benchmarks/single-node-delivery/terraform
 cp terraform.tfvars.example terraform.tfvars
+terraform init -reconfigure
+terraform plan
 ```
+
+Google Cloud uses the separate ignored `google-cloud.tfstate` file; do not
+migrate the former Yandex Cloud state into it. Destroy any still-needed Yandex
+resources from a checkout containing the former configuration before removing
+its state.
+
+The default VM sizes reproduce the prior 8-vCPU/16-GB Pushkin host and
+4-vCPU/8-GB Fake FCM host. Set `spot = true` in `terraform.tfvars` only for
+exploratory runs: Google can stop a Spot VM at any time.
+
+Both VMs receive ephemeral external IP addresses for package and container-image
+downloads, avoiding a separately billed Cloud NAT gateway. The firewall permits
+external SSH to both nodes only from `ssh_allowed_cidr`; Fake FCM's application
+port remains reachable only over its private address.
 
 ## Run
 

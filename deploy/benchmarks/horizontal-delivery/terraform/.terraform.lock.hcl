@@ -1,23 +1,22 @@
 # This file is maintained automatically by "terraform init".
 # Manual edits may be lost in future updates.
 
-provider "registry.terraform.io/yandex-cloud/yandex" {
-  version     = "0.228.0"
-  constraints = "~> 0.140"
+provider "registry.terraform.io/hashicorp/google" {
+  version     = "6.50.0"
+  constraints = "~> 6.0"
   hashes = [
-    "h1:InB0Z/PlApIfIS69lvn3N0P/qSQtWleh4LGU3YzTGIQ=",
-    "zh:078c928278cebad658569d230ab2ae211b5149e469240f1bcb80624425e74809",
-    "zh:1abeef3fc0b69c05662009e38446c1388136e8d84ac6f23b9b1c914d4dfd8842",
-    "zh:1ddd8411025968e8b4d7be1e18b8776e7706c82e879dd26e27a10b8693b15e89",
-    "zh:34b10fab3e0ca762b5979245b65dce99528c244d934b0a9ee7d0d36049908f25",
-    "zh:3e676c9e2029dcfe337a666c0c90f4d313ba8023436f1c57c135b3002aa78487",
-    "zh:597cac74b3817ebb68c8dcde5667ac13a35ba0dfaed026419489b0be88c4bf76",
-    "zh:8fa3d7c1582da1bf2103cfcbf4d837f5701ab118dadd2e5b748682be33b34b4c",
-    "zh:aff0085528c7bb2e00066ef56f9716f2d58a46e40e20d51dd0d0ca572b0a6d70",
-    "zh:bbfe7845ab1629dc0e79d2494ab4d9ac97d0dfc3105c867df7a2169259c5f7c9",
-    "zh:e09dbe1a4aedd6a0f4b76e624bad15d2f36384d35f2ba537e6d92b4e2be86660",
-    "zh:e1d114200d25e127258e70454002df2eeb594b7af05f553c7f481b66b9d14b20",
-    "zh:ebaf612ed0305310c0de9120c9dc2fd3faf5a2943133c1589c90f467b4cfce60",
-    "zh:edfd81c32d29385b33f279c1d4412be4f4e156a5358415db9d1c43bedf66b8f9",
+    "h1:79CwMTsp3Ud1nOl5hFS5mxQHyT0fGVye7pqpU0PPlHI=",
+    "zh:1f3513fcfcbf7ca53d667a168c5067a4dd91a4d4cccd19743e248ff31065503c",
+    "zh:3da7db8fc2c51a77dd958ea8baaa05c29cd7f829bd8941c26e2ea9cb3aadc1e5",
+    "zh:3e09ac3f6ca8111cbb659d38c251771829f4347ab159a12db195e211c76068bb",
+    "zh:7bb9e41c568df15ccf1a8946037355eefb4dfb4e35e3b190808bb7c4abae547d",
+    "zh:81e5d78bdec7778e6d67b5c3544777505db40a826b6eb5abe9b86d4ba396866b",
+    "zh:8d309d020fb321525883f5c4ea864df3d5942b6087f6656d6d8b3a1377f340fc",
+    "zh:93e112559655ab95a523193158f4a4ac0f2bfed7eeaa712010b85ebb551d5071",
+    "zh:d3efe589ffd625b300cef5917c4629513f77e3a7b111c9df65075f76a46a63c7",
+    "zh:d4a4d672bbef756a870d8f32b35925f8ce2ef4f6bbd5b71a3cb764f1b6c85421",
+    "zh:e13a86bca299ba8a118e80d5f84fbdd708fe600ecdceea1a13d4919c068379fe",
+    "zh:f569b65999264a9416862bca5cd2a6177d94ccb0424f3a4ef424428912b9cb3c",
+    "zh:fec30c095647b583a246c39d557704947195a1b7d41f81e369ba377d997faef6",
   ]
 }

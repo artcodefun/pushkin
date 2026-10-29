@@ -1,12 +1,20 @@
 terraform {
   required_version = ">= 1.6.0"
 
+  backend "local" {
+    path = "google-cloud.tfstate"
+  }
+
   required_providers {
-    yandex = {
-      source  = "yandex-cloud/yandex"
-      version = "~> 0.140"
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 6.0"
     }
   }
 }
 
-provider "yandex" {}
+provider "google" {
+  project = var.project_id
+  region  = var.region
+  zone    = var.zone
+}

@@ -1,6 +1,10 @@
+project_id          = "your-google-cloud-project-id"
 ssh_public_key_path = "/Users/your-user/.ssh/id_ed25519.pub"
 ssh_allowed_cidr    = "203.0.113.10/32"
 
-# One public Pushkin bastion, three private Pushkin VMs, and four private
-# service VMs (Kafka, PostgreSQL/Redis, Cassandra, and Fake FCM).
+# One SSH bastion, three additional Pushkin VMs, and four service VMs
+# (Kafka, PostgreSQL/Redis, Cassandra, and Fake FCM).
 pushkin_instance_count = 4
+
+# Set true only for inexpensive, interruptible exploratory runs.
+spot = false

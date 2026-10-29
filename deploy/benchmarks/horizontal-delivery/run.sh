@@ -28,7 +28,7 @@ run_id="${scenario}-$(date -u +%Y%m%dT%H%M%SZ)"
 run_results_dir="$results_dir/$run_id"
 mkdir -p "$run_results_dir"
 
-echo "==> Provisioning Yandex Cloud environment"
+echo "==> Provisioning Google Cloud environment"
 terraform -chdir="$terraform_dir" init
 terraform -chdir="$terraform_dir" apply -auto-approve
 
