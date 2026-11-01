@@ -101,3 +101,21 @@ controller's own readiness endpoint is not a public HTTP route, and Pushkin
 does not yet provide its route. Once Pushkin is deployed, `terraform output
 ingress_public_ip` gives a temporary HTTP endpoint for functional testing. A
 domain name and TLS are intentionally deferred.
+
+## Test teardown
+
+This platform creates database PVCs backed by billable Compute Persistent
+Disks. For a disposable environment, delete the platform namespaces while the
+CSI controller is still running and wait for the PVC list to become empty:
+
+```bash
+KUBECONFIG=../ansible/.generated/admin.local.conf \
+  kubectl delete namespace pushkin-system pushkin-data k8ssandra-operator \
+  --wait=true --timeout=20m
+KUBECONFIG=../ansible/.generated/admin.local.conf kubectl get pvc -A
+```
+
+Only then destroy the Terraform VM infrastructure. The backup buckets are
+deliberately protected from `terraform destroy` when non-empty; review or
+explicitly delete backup objects separately if the environment is truly
+disposable.

@@ -67,6 +67,27 @@ a highly available API endpoint: node-01 is the sole API endpoint. A
 multi-zone topology and private load balancer will be introduced only after the
 single-zone bootstrap is fully reproducible.
 
+## Disposing of a test cluster
+
+Delete the Kubernetes workloads before destroying the VM infrastructure. This
+lets the CSI driver remove the dynamically provisioned Persistent Disks while
+the cluster and its cloud identity are still available. A disposable test
+cluster can delete the Pushkin namespaces and then wait for all PVCs to be
+gone:
+
+```bash
+KUBECONFIG=ansible/.generated/admin.local.conf \
+  kubectl delete namespace pushkin-system pushkin-data k8ssandra-operator \
+  --wait=true --timeout=20m
+KUBECONFIG=ansible/.generated/admin.local.conf kubectl get pvc -A
+```
+
+Only run `terraform destroy` after that command shows no PVCs. Backup buckets
+deliberately use `force_destroy = false`: if a PostgreSQL or Cassandra backup
+has been written, Terraform will refuse to delete its non-empty bucket. This
+is a protection against accidental backup loss. Inspect those objects and make
+an explicit retention/deletion decision before retrying destroy.
+
 ## Cloud prerequisites
 
 Before the first apply, enable Compute Engine, Artifact Registry, Cloud Storage,
@@ -79,9 +100,9 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   storage.googleapis.com \
   iam.googleapis.com \
-  --project pushkin-512420
+  --project <your-project-id>
 ```
 
-Replace the project ID with the value in `terraform.tfvars`. Enabling APIs is
-kept outside Terraform: many organisations restrict that permission, and an
+Replace `<your-project-id>` with the value in `terraform.tfvars`. Enabling APIs
+is kept outside Terraform: many organisations restrict that permission, and an
 otherwise harmless plan should not silently change project-wide service state.

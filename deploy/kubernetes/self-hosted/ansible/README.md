@@ -92,3 +92,8 @@ inventory, and use a dedicated controlled node-add/remove runbook; do not
 blindly rerun this bootstrap after removing existing nodes. Kubernetes may
 scale **pods** within this fixed capacity, but there is no Cluster Autoscaler
 in this profile.
+
+The CSI-created disks are not Terraform resources. For a disposable cluster,
+delete the database workloads (or their namespaces) and wait until `kubectl get
+pvc -A` is empty before running `terraform destroy`; otherwise the disks can
+outlive the VM instances and continue to incur storage charges.
