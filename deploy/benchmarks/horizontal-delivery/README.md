@@ -69,7 +69,8 @@ directory therefore also contains `metrics.ndjson` with raw samples and
 Cassandra, Redis, and Kafka consumer-lag metrics. Collection failures are reported in the
 summary without aborting the workload. It also records final lag for
 `pushkin.campaign.progress` and `pushkin.notification.accepted` after Fake FCM
-finishes.
+finishes. The runner waits until both groups settle to the current four-record
+Kafka commit boundary before writing the summary.
 
 ```bash
 cd deploy/benchmarks/horizontal-delivery

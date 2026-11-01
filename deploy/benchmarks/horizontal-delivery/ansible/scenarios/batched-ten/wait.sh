@@ -9,7 +9,7 @@ while :; do
   completed="$(jq -r '.completed_count' <<<"$stats")"
   active="$(jq -r '.active_count' <<<"$stats")"
   printf 'completed=%s/%s active=%s\n' "$completed" "$target" "$active"
-  if (( completed >= target )); then
+	if (( completed >= target && active == 0 )); then
     printf '%s\n' "$stats" >"$BENCHMARK_RESULTS_DIR/fake-fcm.json"
     exit 0
   fi

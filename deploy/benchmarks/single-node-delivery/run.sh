@@ -8,7 +8,7 @@ inventory="$benchmark_dir/ansible/inventory.py"
 state_dir="$benchmark_dir/.state"
 results_dir="$benchmark_dir/results"
 monitor="$benchmark_dir/scripts/monitor.sh"
-topic_lag="$benchmark_dir/scripts/topic-lag.sh"
+wait_for_kafka_drain="$benchmark_dir/../horizontal-delivery/scripts/wait-for-kafka-drain.sh"
 scenario="${1:-inline-100k}"
 scenario_dir="$benchmark_dir/ansible/scenarios/$scenario"
 
@@ -116,8 +116,7 @@ FAKE_FCM_PRIVATE_IP="$fake_fcm_private_ip" \
 BENCHMARK_RESULTS_DIR="$run_results_dir" \
 "$scenario_dir/wait.sh"
 
-echo "==> Collecting final Kafka topic lag"
-bash "$topic_lag" \
+bash "$wait_for_kafka_drain" \
   --bastion "$pushkin_ip" \
   --host "$pushkin_private_ip" \
   --compose-file /opt/pushkin-benchmark/pushkin.compose.yml \
