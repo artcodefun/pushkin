@@ -1,0 +1,89 @@
+---
+# Installs the upstream GCE Persistent Disk CSI driver on the already
+# bootstrapped kubeadm cluster. It obtains credentials from the Compute Engine
+# service account attached to every cluster node; no private key is copied to
+# a Kubernetes Secret.
+- name: Install dynamic persistent storage for the self-hosted cluster
+  hosts: kube_bootstrap_control_plane
+  become: true
+  vars:
+    gce_pd_storage_class: gce-pd-balanced
+    gce_pd_csi_manifest_directory: /opt/gce-pd-csi-driver
+
+  tasks:
+    - name: Create the GCE Persistent Disk CSI namespace
+      ansible.builtin.shell:
+        cmd: >-
+          kubectl --kubeconfig /etc/kubernetes/admin.conf create namespace gce-pd-csi-driver
+          --dry-run=client -o yaml |
+          kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f -
+      changed_when: false
+
+    - name: Create the GCE Persistent Disk CSI manifest directory
+      ansible.builtin.file:
+        path: "{{ gce_pd_csi_manifest_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy the GCE Persistent Disk CSI kustomization
+      ansible.builtin.copy:
+        src: gce-pd-csi/kustomization.yaml
+        dest: "{{ gce_pd_csi_manifest_directory }}/kustomization.yaml"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Install the pinned GCE Persistent Disk CSI driver manifests
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/admin.conf apply -k
+        {{ gce_pd_csi_manifest_directory }}
+      changed_when: false
+
+    - name: Wait for the GCE Persistent Disk CSI controller
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/admin.conf -n gce-pd-csi-driver
+        rollout status deployment/csi-gce-pd-controller --timeout=5m
+      changed_when: false
+
+    - name: Wait for the GCE Persistent Disk CSI node plugin
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/admin.conf -n gce-pd-csi-driver
+        rollout status daemonset/csi-gce-pd-node --timeout=5m
+      changed_when: false
+
+    - name: Create the explicit balanced Persistent Disk storage class
+      ansible.builtin.copy:
+        dest: /root/gce-pd-balanced-storage-class.yaml
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: {{ gce_pd_storage_class }}
+          provisioner: pd.csi.storage.gke.io
+          allowVolumeExpansion: true
+          volumeBindingMode: WaitForFirstConsumer
+          parameters:
+            type: pd-balanced
+
+    - name: Apply the explicit balanced Persistent Disk storage class
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/admin.conf apply -f
+        /root/gce-pd-balanced-storage-class.yaml
+      changed_when: false
+
+    - name: Verify that the GCE Persistent Disk CSI driver is registered
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/admin.conf get csidriver
+        pd.csi.storage.gke.io
+      changed_when: false
+
+    - name: Verify that the expected storage class exists
+      ansible.builtin.command: >-
+        kubectl --kubeconfig /etc/kubernetes/admin.conf get storageclass
+        {{ gce_pd_storage_class }}
+      changed_when: false

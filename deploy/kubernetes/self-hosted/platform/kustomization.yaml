@@ -1,0 +1,95 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# These files are local deployment inputs. They are intentionally ignored: the
+# first contains S3 credentials and the second contains the PostgreSQL password.
+secretGenerator:
+  - name: postgres-backup-credentials
+    envs:
+      - local/postgres-backup-credentials.env
+  - name: pushkin-postgres-app
+    envs:
+      - local/postgres-app.env
+  - name: pushkin-runtime
+    namespace: pushkin-system
+    envs:
+      - local/pushkin-runtime.env
+generatorOptions:
+  disableNameSuffixHash: true
+
+patches:
+  - target:
+      kind: Secret
+      name: postgres-backup-credentials
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: pushkin-data
+  - target:
+      kind: Secret
+      name: pushkin-postgres-app
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: pushkin-data
+
+configMapGenerator:
+  - name: postgres-backup-settings
+    envs:
+      - local/postgres-backup-settings.env
+  - name: cassandra-backup-settings
+    envs:
+      - local/cassandra-backup-settings.env
+  - name: pushkin-image
+    namespace: pushkin-system
+    envs:
+      - local/pushkin-image.env
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: postgres-backup-settings
+      fieldPath: data.destinationPath
+    targets:
+      - select:
+          kind: ObjectStore
+          name: pushkin-postgres-backups
+        fieldPaths:
+          - spec.configuration.destinationPath
+  - source:
+      kind: ConfigMap
+      name: cassandra-backup-settings
+      fieldPath: data.bucketName
+    targets:
+      - select:
+          kind: K8ssandraCluster
+          name: pushkin-cassandra
+        fieldPaths:
+          - spec.medusa.storageProperties.bucketName
+  - source:
+      kind: ConfigMap
+      name: pushkin-image
+      namespace: pushkin-system
+      fieldPath: data.image
+    targets:
+      - select:
+          kind: Deployment
+          name: pushkin
+          namespace: pushkin-system
+        fieldPaths:
+          - spec.template.spec.containers.[name=pushkin].image
+      - select:
+          kind: Job
+          name: pushkin-postgres-migrations
+          namespace: pushkin-system
+        fieldPaths:
+          - spec.template.spec.containers.[name=migrate].image
+
+resources:
+  - namespaces.yaml
+  - redis.yaml
+  - postgres.yaml
+  - kafka.yaml
+  - cassandra.yaml
+  - migrations.yaml
+  - pushkin.yaml

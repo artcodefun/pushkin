@@ -1,0 +1,11 @@
+---
+# Keep the Kubernetes release stream explicit. Update this only as a deliberate
+# cluster upgrade, following Kubernetes version-skew rules.
+kubernetes_minor_version: "v1.34"
+kubernetes_pod_cidr: "192.168.0.0/16"
+calico_version: "v3.32.2"
+
+# node-01 is intentionally the API endpoint in this first single-zone profile.
+# The three control-plane nodes preserve etcd quorum, but this endpoint is not
+# highly available until a load balancer or virtual IP is introduced.
+kubernetes_api_endpoint: "{{ hostvars[groups['kube_control_plane'][0]].kube_node_ip }}"

@@ -1,0 +1,62 @@
+apiVersion: k8ssandra.io/v1alpha1
+kind: K8ssandraCluster
+metadata:
+  name: pushkin-cassandra
+  namespace: k8ssandra-operator
+spec:
+  cassandra:
+    # K8ssandra 1.32.6 resolves its default 5.0.0 management image to a tag
+    # that is no longer published. Pin the available management API image so
+    # the desired Cassandra version and the pulled container stay aligned.
+    serverVersion: "5.0.1"
+    serverImage: k8ssandra/cass-management-api:5.0.1-ubi
+    storageConfig:
+      cassandraDataVolumeClaimSpec:
+        storageClassName: gce-pd-balanced
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 100Gi
+    config:
+      jvmOptions:
+        heapSize: 2Gi
+    datacenters:
+      - metadata:
+          name: dc1
+        size: 3
+        softPodAntiAffinity: false
+  medusa:
+    # A separate MedusaBackupSchedule below owns purge timing. Disable the
+    # operator's legacy automatic purge CronJob to avoid two concurrent purges.
+    purgeBackups: false
+    storageProperties:
+      storageProvider: google_storage
+      storageSecretRef:
+        name: medusa-bucket-key
+      bucketName: must-be-replaced
+      prefix: pushkin-cassandra
+      maxBackupAge: 30
+      concurrentTransfers: 2
+---
+apiVersion: medusa.k8ssandra.io/v1alpha1
+kind: MedusaBackupSchedule
+metadata:
+  name: pushkin-cassandra-daily
+  namespace: k8ssandra-operator
+spec:
+  backupSpec:
+    backupType: differential
+    cassandraDatacenter: dc1
+  cronSchedule: "30 1 * * *"
+  disabled: false
+---
+apiVersion: medusa.k8ssandra.io/v1alpha1
+kind: MedusaBackupSchedule
+metadata:
+  name: pushkin-cassandra-purge
+  namespace: k8ssandra-operator
+spec:
+  backupSpec:
+    cassandraDatacenter: dc1
+  cronSchedule: "0 0 * * *"
+  operationType: purge

@@ -1,0 +1,75 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pushkin-postgres-migrations
+  namespace: pushkin-system
+spec:
+  backoffLimit: 12
+  template:
+    spec:
+      restartPolicy: OnFailure
+      imagePullSecrets:
+        - name: pushkin-image-registry
+      containers:
+        - name: migrate
+          image: must-be-replaced
+          command: ["/app/migrate.sh"]
+          envFrom:
+            - secretRef:
+                name: pushkin-runtime
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 100
+            runAsGroup: 101
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pushkin-cassandra-migrations
+  namespace: pushkin-system
+spec:
+  backoffLimit: 12
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: cassandra:5.0
+          command: ["bash", "/migrations/migrate.sh"]
+          env:
+            - name: PUSHKIN_CASSANDRA_HOST
+              value: pushkin-cassandra-dc1-service.k8ssandra-operator.svc
+            - name: PUSHKIN_CASSANDRA_PORT
+              value: "9042"
+            - name: PUSHKIN_CASSANDRA_KEYSPACE
+              value: pushkin_inbox
+            - name: PUSHKIN_CASSANDRA_LOCAL_DATACENTER
+              value: dc1
+            - name: PUSHKIN_CASSANDRA_REPLICATION_FACTOR
+              value: "3"
+            - name: PUSHKIN_CASSANDRA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: pushkin-cassandra-superuser
+                  key: username
+            - name: PUSHKIN_CASSANDRA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pushkin-cassandra-superuser
+                  key: password
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+      volumes:
+        - name: migrations
+          configMap:
+            name: pushkin-cassandra-migrations
+            defaultMode: 0555

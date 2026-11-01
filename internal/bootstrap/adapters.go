@@ -98,6 +98,12 @@ func NewAdapters(config Config) (*Adapters, error) {
 	cassandraCluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(
 		gocql.DCAwareRoundRobinPolicy(config.CassandraLocalDatacenter),
 	)
+	if config.CassandraUsername != "" {
+		cassandraCluster.Authenticator = gocql.PasswordAuthenticator{
+			Username: config.CassandraUsername,
+			Password: config.CassandraPassword,
+		}
+	}
 	cassandraSession, err := cassandraCluster.CreateSession()
 	if err != nil {
 		return nil, fmt.Errorf("create Cassandra session: %w", err)

@@ -1,0 +1,79 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: pushkin-postgres-backups
+  namespace: pushkin-data
+spec:
+  retentionPolicy: 30d
+  configuration:
+    # Replaced by kustomize from local/postgres-backup-settings.env.
+    destinationPath: s3://must-be-replaced
+    endpointURL: https://storage.googleapis.com
+    s3Credentials:
+      accessKeyId:
+        name: postgres-backup-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: postgres-backup-credentials
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+      maxParallel: 2
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pushkin-postgres
+  namespace: pushkin-data
+spec:
+  instances: 3
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  bootstrap:
+    initdb:
+      database: pushkin
+      owner: pushkin
+      secret:
+        name: pushkin-postgres-app
+  storage:
+    storageClass: gce-pd-balanced
+    size: 100Gi
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+    podAntiAffinityType: required
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: pushkin-postgres-backups
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: pushkin-postgres-daily
+  namespace: pushkin-data
+spec:
+  immediate: true
+  schedule: "0 0 0 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: pushkin-postgres
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

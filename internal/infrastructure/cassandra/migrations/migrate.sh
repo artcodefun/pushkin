@@ -8,6 +8,8 @@ cassandra_port="${PUSHKIN_CASSANDRA_PORT:-9042}"
 migrations_dir="${PUSHKIN_CASSANDRA_MIGRATIONS_DIR:-/migrations}"
 cassandra_local_datacenter="${PUSHKIN_CASSANDRA_LOCAL_DATACENTER:-dc1}"
 cassandra_replication_factor="${PUSHKIN_CASSANDRA_REPLICATION_FACTOR:-1}"
+cassandra_username="${PUSHKIN_CASSANDRA_USERNAME:-}"
+cassandra_password="${PUSHKIN_CASSANDRA_PASSWORD:-}"
 
 if ! [[ "$cassandra_local_datacenter" =~ ^[[:alnum:]_-]+$ ]]; then
 	echo "PUSHKIN_CASSANDRA_LOCAL_DATACENTER must contain only letters, digits, underscores, or hyphens" >&2
@@ -17,9 +19,18 @@ if ! [[ "$cassandra_replication_factor" =~ ^[1-9][0-9]*$ ]]; then
 	echo "PUSHKIN_CASSANDRA_REPLICATION_FACTOR must be a positive integer" >&2
 	exit 1
 fi
+if [[ -n "$cassandra_username" && -z "$cassandra_password" ]] || [[ -z "$cassandra_username" && -n "$cassandra_password" ]]; then
+	echo "PUSHKIN_CASSANDRA_USERNAME and PUSHKIN_CASSANDRA_PASSWORD must be set together" >&2
+	exit 1
+fi
+
+cqlsh_auth_args=()
+if [[ -n "$cassandra_username" ]]; then
+	cqlsh_auth_args=(-u "$cassandra_username" -p "$cassandra_password")
+fi
 
 cqlsh() {
-	command cqlsh "$cassandra_host" "$cassandra_port" "$@"
+	command cqlsh "$cassandra_host" "$cassandra_port" "${cqlsh_auth_args[@]}" "$@"
 }
 
 cqlsh -e "CREATE KEYSPACE IF NOT EXISTS ${PUSHKIN_CASSANDRA_KEYSPACE} WITH replication = {'class': 'NetworkTopologyStrategy', '${cassandra_local_datacenter}': ${cassandra_replication_factor}}"

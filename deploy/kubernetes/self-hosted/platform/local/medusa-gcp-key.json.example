@@ -1,0 +1,8 @@
+{
+  "type": "service_account",
+  "project_id": "replace-with-your-project-id",
+  "private_key_id": "replace-me",
+  "private_key": "-----BEGIN PRIVATE KEY-----\\nreplace-me\\n-----END PRIVATE KEY-----\\n",
+  "client_email": "replace-with-cassandra-backup-service-account-email",
+  "client_id": "replace-me"
+}

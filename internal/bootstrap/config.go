@@ -44,6 +44,8 @@ type Config struct {
 	RedisAddress                    string
 	CassandraHosts                  []string
 	CassandraKeyspace               string
+	CassandraUsername               string
+	CassandraPassword               string
 	CassandraLocalDatacenter        string
 	CassandraReplicationFactor      int
 	CassandraConsistency            string
@@ -117,6 +119,11 @@ func loadConfig(getenv func(string) string) (Config, error) {
 	cassandraKeyspace, err := requiredEnv(getenv, "PUSHKIN_CASSANDRA_KEYSPACE")
 	if err != nil {
 		return Config{}, err
+	}
+	cassandraUsername := strings.TrimSpace(getenv("PUSHKIN_CASSANDRA_USERNAME"))
+	cassandraPassword := getenv("PUSHKIN_CASSANDRA_PASSWORD")
+	if (cassandraUsername == "") != (cassandraPassword == "") {
+		return Config{}, fmt.Errorf("PUSHKIN_CASSANDRA_USERNAME and PUSHKIN_CASSANDRA_PASSWORD must be set together")
 	}
 	cassandraLocalDatacenter := strings.TrimSpace(getenv("PUSHKIN_CASSANDRA_LOCAL_DATACENTER"))
 	if cassandraLocalDatacenter == "" {
@@ -271,6 +278,8 @@ func loadConfig(getenv func(string) string) (Config, error) {
 		RedisAddress:                    redisAddress,
 		CassandraHosts:                  cassandraHosts,
 		CassandraKeyspace:               cassandraKeyspace,
+		CassandraUsername:               cassandraUsername,
+		CassandraPassword:               cassandraPassword,
 		CassandraLocalDatacenter:        cassandraLocalDatacenter,
 		CassandraReplicationFactor:      cassandraReplicationFactor,
 		CassandraConsistency:            cassandraConsistency,

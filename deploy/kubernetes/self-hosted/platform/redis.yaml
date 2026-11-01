@@ -1,0 +1,88 @@
+# Redis is deliberately a singleton: Pushkin uses it only for cache and
+# coordination/rate-limit state. PostgreSQL and Cassandra remain the durable
+# sources of truth. A restart therefore temporarily loses rate-limit state but
+# does not lose notification or campaign data.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: pushkin-data
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: pushkin
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: pushkin-data
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: pushkin
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: pushkin
+    spec:
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: redis
+          image: redis:7.4.7-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - redis-server
+            - --appendonly
+            - "no"
+            - --save
+            - ""
+          ports:
+            - name: redis
+              containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+          volumeMounts:
+            - name: redis-tmp
+              mountPath: /tmp
+      volumes:
+        - name: redis-tmp
+          emptyDir: {}

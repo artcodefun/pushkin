@@ -69,6 +69,8 @@ func TestLoadConfigRejectsInvalidValues(t *testing.T) {
 		{name: "invalid Cassandra replication factor", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_REPLICATION_FACTOR", "0")},
 		{name: "invalid Cassandra consistency", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_CONSISTENCY", "QUORUM")},
 		{name: "local quorum with one Cassandra replica", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_CONSISTENCY", "LOCAL_QUORUM")},
+		{name: "Cassandra username without password", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_USERNAME", "cassandra")},
+		{name: "Cassandra password without username", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_CASSANDRA_PASSWORD", "password")},
 		{name: "invalid inline run batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_INLINE_CAMPAIGN_RUN_BATCH_SIZE", "0")},
 		{name: "invalid inline fanout batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_INLINE_CAMPAIGN_FANOUT_BATCH_SIZE", "0")},
 		{name: "invalid notification projection batch size", env: withEnvironment(validConfigEnvironment(), "PUSHKIN_NOTIFICATION_PROJECTION_BATCH_SIZE", "0")},
@@ -111,6 +113,8 @@ func TestLoadConfigParsesOverrides(t *testing.T) {
 	env["PUSHKIN_KAFKA_PROGRESS_RETENTION"] = "72h"
 	env["PUSHKIN_KAFKA_TOPIC_REPLICATION_FACTOR"] = "3"
 	env["PUSHKIN_CASSANDRA_LOCAL_DATACENTER"] = "production-dc"
+	env["PUSHKIN_CASSANDRA_USERNAME"] = "pushkin"
+	env["PUSHKIN_CASSANDRA_PASSWORD"] = "cassandra-password"
 	env["PUSHKIN_CASSANDRA_REPLICATION_FACTOR"] = "3"
 	env["PUSHKIN_CASSANDRA_CONSISTENCY"] = "LOCAL_QUORUM"
 	env["PUSHKIN_USE_TEST_SENDER"] = "true"
@@ -138,6 +142,9 @@ func TestLoadConfigParsesOverrides(t *testing.T) {
 	if config.KafkaTopicReplicationFactor != 3 || config.CassandraLocalDatacenter != "production-dc" ||
 		config.CassandraReplicationFactor != 3 || config.CassandraConsistency != "LOCAL_QUORUM" {
 		t.Fatalf("unexpected topology configuration: %+v", config)
+	}
+	if config.CassandraUsername != "pushkin" || config.CassandraPassword != "cassandra-password" {
+		t.Fatal("unexpected Cassandra authentication configuration")
 	}
 	if config.TelemetryOTLPEndpoint != "telemetry:4317" || config.TelemetryServiceName != "pushkin-test" ||
 		config.TelemetryMetricsExportInterval != 5*time.Second {
